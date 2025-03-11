@@ -147,6 +147,9 @@ class WebScraperService:
             "CompanyDescription": "",
             "SocialLinks": {},
             "ContactInfo": {},
+            "Address": "",
+            "Founders": [],
+            "Products": [],
             "EnrichmentSource": "Web Scraping",
             "EnrichmentNotes": ""
         }
@@ -160,7 +163,6 @@ class WebScraperService:
         if not company_info["CompanyDescription"]:
             about_section = self._find_about_section(soup, company_name)
             if about_section:
-                # Get up to 3 paragraphs
                 paragraphs = about_section.find_all('p')[:3]
                 if paragraphs:
                     company_info["CompanyDescription"] = ' '.join([p.text.strip() for p in paragraphs])
@@ -175,14 +177,35 @@ class WebScraperService:
         if contact_info:
             company_info["ContactInfo"] = contact_info
         
+        # Extract address
+        address = self._extract_address(soup)
+        if address:
+            company_info["Address"] = address
+        
+        # Extract founders or key people
+        founders = self._extract_founders(soup)
+        if founders:
+            company_info["Founders"] = founders
+        
+        # Extract products or services
+        products = self._extract_products(soup)
+        if products:
+            company_info["Products"] = products
+        
         # Add notes about what was found
         notes = []
         if company_info["CompanyDescription"]:
             notes.append("Found company description")
         if company_info["SocialLinks"]:
-            notes.append(f"Found {len(company_info['SocialLinks'])} social links")
+            notes.append(f"Found {len(company_info['SocialLinks'])} social links: {', '.join(company_info['SocialLinks'].keys())}")
         if company_info["ContactInfo"]:
-            notes.append(f"Found {len(company_info['ContactInfo'])} contact details")
+            notes.append(f"Found {len(company_info['ContactInfo'])} contact details: {', '.join(f'{k}: {v}' for k, v in company_info['ContactInfo'].items())}")
+        if company_info["Address"]:
+            notes.append("Found company address")
+        if company_info["Founders"]:
+            notes.append(f"Found {len(company_info['Founders'])} founders: {', '.join(company_info['Founders'])}")
+        if company_info["Products"]:
+            notes.append(f"Found {len(company_info['Products'])} products/services: {', '.join(company_info['Products'])}")
         
         company_info["EnrichmentNotes"] = ". ".join(notes)
         
@@ -302,6 +325,34 @@ class WebScraperService:
         
         return contact_info
     
+    def _extract_address(self, soup: BeautifulSoup) -> str:
+        """Extract the company address from the page."""
+        # Implement logic to find address, e.g., using regex or specific HTML tags
+        address = ""
+        # Example logic (this will need to be tailored to the specific website structure)
+        address_section = soup.find(text=re.compile(r'address', re.I))
+        if address_section:
+            address = address_section.find_next('p').text.strip()  # Adjust based on actual HTML structure
+        return address
+    
+    def _extract_founders(self, soup: BeautifulSoup) -> List[str]:
+        """Extract founders or key people from the page."""
+        founders = []
+        # Implement logic to find founders, e.g., using specific HTML tags or sections
+        founders_section = soup.find(text=re.compile(r'founder', re.I))
+        if founders_section:
+            founders = [founders_section.find_next('p').text.strip()]  # Adjust based on actual HTML structure
+        return founders
+    
+    def _extract_products(self, soup: BeautifulSoup) -> List[str]:
+        """Extract products or services from the page."""
+        products = []
+        # Implement logic to find products/services, e.g., using specific HTML tags or sections
+        products_section = soup.find(text=re.compile(r'products|services', re.I))
+        if products_section:
+            products = [products_section.find_next('p').text.strip()]  # Adjust based on actual HTML structure
+        return products
+    
     def enrich_company_data(self, company_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Enrich company data by scraping their website.
@@ -319,7 +370,7 @@ class WebScraperService:
         
         # Skip if no website
         if not website:
-            logger.warning("No website URL to scrape for company: %s", company_data.get('Company', 'Unknown'))
+            print(f"No website URL to scrape for company: {company_data.get('Company', 'Unknown')}")
             enriched_data['EnrichmentStatus'] = 'Skipped - No Website'
             return enriched_data
         
@@ -327,45 +378,44 @@ class WebScraperService:
         success, soup, error = self.fetch_page(website)
         
         if not success:
-            logger.warning("Failed to fetch website for company %s: %s", 
-                          company_data.get('Company', 'Unknown'), error)
+            print(f"Failed to fetch website for company {company_data.get('Company', 'Unknown')}: {error}")
             enriched_data['EnrichmentStatus'] = f'Failed - {error}'
             return enriched_data
         
         # Extract company information
         company_info = self.extract_company_info(soup, company_data.get('Company', ''))
         
+        # Print the raw data to help with debugging
+        print(f"Raw scraped data for {company_data.get('Company', 'Unknown')}: {company_info}")
+        
         # Update enriched data
         for key, value in company_info.items():
-            if isinstance(value, dict):
-                # For nested dictionaries like SocialLinks and ContactInfo
+            if key == "SocialLinks" and value:
+                # Explicitly store all social links in the enriched data
+                for platform, url in value.items():
+                    enriched_data[platform] = url
+            elif key == "ContactInfo" and value:
+                # Explicitly store all contact info in the enriched data
+                for contact_type, contact_info in value.items():
+                    enriched_data[contact_type] = contact_info
+            elif isinstance(value, dict):
+                # For any other nested dictionaries
                 for sub_key, sub_value in value.items():
-                    if sub_key == 'Email' and not enriched_data.get('Email'):
-                        enriched_data['Email'] = sub_value
-                    elif sub_key == 'Phone' and not enriched_data.get('Phone'):
-                        enriched_data['Phone'] = sub_value
-                    elif sub_key == 'LinkedIn' and not enriched_data.get('LinkedIn'):
-                        enriched_data['LinkedIn'] = sub_value
-                    else:
-                        # Store other information in the EnrichmentNotes
-                        notes = enriched_data.get('EnrichmentNotes', '')
-                        enriched_data['EnrichmentNotes'] = f"{notes}\n{sub_key}: {sub_value}".strip()
+                    enriched_data[sub_key] = sub_value
             else:
                 # For direct key-value pairs
-                if key == 'CompanyDescription' and value and not enriched_data.get('CompanyDescription'):
-                    enriched_data['CompanyDescription'] = value
-                elif key == 'EnrichmentNotes':
-                    enriched_data['EnrichmentNotes'] = value
-                elif key == 'EnrichmentSource':
-                    enriched_data['EnrichmentSource'] = value
+                if key not in ['EnrichmentNotes', 'EnrichmentSource'] or not enriched_data.get(key):
+                    enriched_data[key] = value
         
         # Update enrichment status
         enriched_data['EnrichmentStatus'] = 'Completed'
         
+        # Print the final enriched data to verify
+        print(f"Final enriched data for {company_data.get('Company', 'Unknown')}: {enriched_data}")
+        
         return enriched_data
     
-    def bulk_enrich_companies(self, companies_df: pd.DataFrame, 
-                              update_callback=None) -> pd.DataFrame:
+    def bulk_enrich_companies(self, companies_df: pd.DataFrame,update_callback=None) -> pd.DataFrame:
         """
         Enrich multiple companies in a DataFrame.
         
@@ -377,7 +427,7 @@ class WebScraperService:
             pd.DataFrame: DataFrame with enriched company data
         """
         enriched_df = companies_df.copy()
-        
+        print('------Enriched DF',enriched_df)
         # Track success rate
         total_companies = len(enriched_df)
         success_count = 0

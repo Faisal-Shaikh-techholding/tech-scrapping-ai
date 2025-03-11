@@ -14,9 +14,7 @@ import site
 import platform
 import shutil
 
-# Create logs directory if it doesn't exist
-logs_dir = Path('logs')
-logs_dir.mkdir(exist_ok=True)
+
 
 # Find the absolute path to the app
 app_path = Path(__file__).parent / 'app' / 'main.py'

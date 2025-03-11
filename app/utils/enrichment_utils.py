@@ -8,6 +8,8 @@ This module contains utility functions for enriching company data using various 
 
 import logging
 from typing import Dict, List, Tuple, Any, Optional
+import streamlit as st
+from app.utils.enrichment.progress_utils import should_stop_processing
 
 logger = logging.getLogger('csv_processor')
 
@@ -37,6 +39,12 @@ def enrich_company_data(company_data: Dict[str, Any], services: List[Tuple[str, 
         enriched_data['EnrichmentStatus'] = 'Pending'
     if 'EnrichmentNotes' not in enriched_data:
         enriched_data['EnrichmentNotes'] = ''
+    
+    # Check if processing should be stopped
+    if should_stop_processing():
+        enriched_data['EnrichmentStatus'] = 'Cancelled'
+        enriched_data['EnrichmentNotes'] = 'Enrichment cancelled by user'
+        return enriched_data
     
     # Try each service in order until successful
     for service_name, service in services:

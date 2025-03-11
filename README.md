@@ -1,19 +1,73 @@
-# AI-Powered CSV Processor for Lead Management
+# AI-Powered CSV Processor for Company Data
 
-A web-based application for processing, enriching, and managing sales leads using AI and external APIs.
+This application allows users to upload CSV files with company information, enrich the data using multiple services, and submit it to Salesforce CRM.
 
 ## Features
 
-- **CSV/Excel Parsing**: Upload and intelligently parse lead data from CSV or Excel files
-- **Data Extraction**: Automatically extract names, companies, and contact information
-- **Lead Enrichment**:
-  - API-based enrichment via Apollo.io
-  - Web scraping for additional company details
-- **Interactive UI**:
-  - Visual data preview and validation
-  - Interactive data editing
-  - Progress tracking and enrichment status
-- **Salesforce Integration**: Send enriched leads to Salesforce CRM with a single click
+- Upload and process CSV files with company information
+- Enrich company data using multiple services:
+  - Apollo.io API
+  - Crunchbase API
+  - Web scraping
+- One-click enrichment that tries all services in sequence
+- Review and edit enriched data
+- Export data to Salesforce CRM
+
+## Code Structure
+
+The application is organized into the following components:
+
+### Main Application
+
+- `app/main.py`: Main application entry point
+- `app/utils/session_state.py`: Session state management
+- `app/utils/logging_config.py`: Logging configuration
+
+### Components
+
+- `app/components/sidebar.py`: Sidebar component
+- `app/components/csv_upload.py`: CSV upload component
+- `app/components/data_preview.py`: Data preview component
+- `app/components/data_enrichment.py`: Data enrichment component
+- `app/components/data_editor.py`: Data editor component
+- `app/components/salesforce_export.py`: Salesforce export component
+
+### Services
+
+- `app/services/apollo_service.py`: Apollo.io API service
+- `app/services/crunchbase_service.py`: Crunchbase API service
+- `app/services/web_scraper.py`: Web scraping service
+- `app/services/salesforce_service.py`: Salesforce API service
+
+### Utilities
+
+- `app/utils/data_processing.py`: Data processing utilities
+- `app/utils/enrichment_utils.py`: Enrichment utilities
+
+#### Enrichment Utilities
+
+- `app/utils/enrichment/progress_utils.py`: Progress tracking utilities
+- `app/utils/enrichment/one_click.py`: One-click enrichment functionality
+- `app/utils/enrichment/service_enrichment.py`: Service-specific enrichment functions
+- `app/utils/enrichment/results_display.py`: Results display utilities
+
+## Optimization Notes
+
+The code has been optimized for:
+
+1. **Modularity**: Split large files into smaller, focused modules
+2. **Performance**: Reduced redundancy and improved data processing efficiency
+3. **User Experience**: Added stop buttons to all enrichment processes
+4. **Error Handling**: Improved error handling and recovery mechanisms
+5. **Code Reuse**: Created common utilities for shared functionality
+
+## Usage
+
+1. Upload a CSV file with company information
+2. Preview and validate the data
+3. Enrich the data using one or more services
+4. Review and edit the enriched data
+5. Export the data to Salesforce CRM
 
 ## Architecture
 
@@ -35,6 +89,7 @@ app/
 │   └── data_processing.py # Data processing utilities
 └── services/              # External service integrations
     ├── apollo_service.py  # Apollo.io API service
+    ├── crunchbase_service.py # Crunchbase API service
     ├── web_scraper.py     # Web scraping service
     └── salesforce_service.py # Salesforce API service
 ```
@@ -65,22 +120,6 @@ SF_USERNAME=your_salesforce_username
 SF_PASSWORD=your_salesforce_password
 SF_SECURITY_TOKEN=your_salesforce_token
 ```
-
-## Usage
-
-1. Run the application:
-```bash
-streamlit run app/main.py
-```
-
-2. Open your browser and navigate to http://localhost:8501
-
-3. Follow the step-by-step process:
-   - Upload CSV or Excel file
-   - Preview and validate extracted data
-   - Enrich data using APIs and web scraping
-   - Review and edit the enriched data
-   - Export selected leads to Salesforce
 
 ## API Configuration
 

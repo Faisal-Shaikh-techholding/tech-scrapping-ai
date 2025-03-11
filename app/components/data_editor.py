@@ -11,7 +11,6 @@ import streamlit as st
 import pandas as pd
 import logging
 from app.utils.session_state import go_to_step
-from app.utils.data_processing import prepare_for_salesforce
 
 logger = logging.getLogger('csv_processor')
 

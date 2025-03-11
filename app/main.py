@@ -20,7 +20,6 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import utility modules
-from app.utils.logging_config import setup_logging
 from app.utils.session_state import initialize_session_state, go_to_step
 
 # Import components
@@ -31,8 +30,7 @@ from app.components.data_enrichment import render_data_enrichment
 from app.components.data_editor import render_data_editor
 from app.components.salesforce_export import render_salesforce_export
 
-# Set up logging
-logger = setup_logging()
+
 
 # App title and description
 APP_TITLE = "AI-Powered CSV Processor for Company Data"
