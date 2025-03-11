@@ -12,6 +12,7 @@ import time
 import logging
 import random
 from typing import Dict, Any, Optional, Tuple
+from urllib.parse import urlparse
 
 logger = logging.getLogger('csv_processor')
 
@@ -62,14 +63,29 @@ class ApolloService:
         """
         if not url:
             return None
+        
+        try:
+            # Handle URLs without protocol by adding one
+            if not url.startswith('http'):
+                url = 'http://' + url
+                
+            # Use urlparse for more robust parsing
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc
             
-        # Remove protocol and www if present
-        domain = url.lower().replace("https://", "").replace("http://", "").replace("www.", "")
-        
-        # Remove path and query params
-        domain = domain.split("/")[0]
-        
-        return domain
+            # Remove www if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+                
+            # Ensure we have a valid domain
+            if not domain or '.' not in domain:
+                logger.warning(f"Invalid domain extracted from URL: {url}")
+                return None
+                
+            return domain
+        except Exception as e:
+            logger.error(f"Error extracting domain from URL {url}: {str(e)}")
+            return None
     
     def enrich_person(self, first_name: str, last_name: str, company_name: str = None, 
                      email: str = None) -> Tuple[bool, Dict[str, Any]]:
@@ -143,32 +159,49 @@ class ApolloService:
         # Clean up domain if needed (remove protocols, www, trailing slashes)
         clean_domain = self._extract_domain_from_url(domain)
         if not clean_domain:
-            logger.warning("Failed to extract valid domain from %s", domain)
-            return False, {}
+            logger.warning(f"Failed to extract valid domain from {domain}")
+            return False, {"error": f"Invalid domain: {domain}"}
         
         endpoint = f"{self.BASE_URL}/organizations/enrich"
         
-        # Build query parameters
-        params = {
-            "api_key": self.api_key,
-            "domain": clean_domain
-        }
-        
         try:
-            response = requests.get(endpoint, params=params, headers=self.headers, timeout=30)
-            response.raise_for_status()
+            params = {
+                "api_key": self.api_key,
+                "domain": clean_domain
+            }
+            
+            response = requests.get(endpoint, params=params)
+            
+            # Check for rate limiting or other errors
+            if response.status_code == 429:
+                logger.warning("Apollo API rate limit reached. Waiting before retry.")
+                time.sleep(60)  # Wait a minute before allowing more requests
+                return False, {"error": "Rate limit reached"}
+                
+            if response.status_code != 200:
+                logger.error(f"Apollo API error (organization enrichment): {response.status_code} {response.reason} for url: {response.url}")
+                # Don't include the API key in the error message
+                sanitized_url = response.url.replace(self.api_key, "API_KEY_REDACTED")
+                return False, {"error": f"API error: {response.status_code} {response.reason} for {sanitized_url}"}
             
             data = response.json()
             
-            # Check if we got any results - organization data is in the 'organization' key
-            if data and 'organization' in data and data['organization']:
-                return True, self._format_company_data(data['organization'])
+            # Check if the API returned an error
+            if data.get("status") == "error" or not data.get("organization"):
+                error_message = data.get("message", "Unknown error")
+                logger.warning(f"Apollo API returned error: {error_message}")
+                return False, {"error": error_message}
             
-            logger.warning("No organization found in Apollo for domain: %s", clean_domain)
-            return False, {}
-                
+            return True, data
+            
         except requests.exceptions.RequestException as e:
-            logger.error("Apollo API error (organization enrichment): %s", str(e))
+            logger.error(f"Apollo API request error: {str(e)}")
+            return False, {"error": str(e)}
+        except ValueError as e:
+            logger.error(f"Apollo API JSON parsing error: {str(e)}")
+            return False, {"error": "Invalid response format"}
+        except Exception as e:
+            logger.error(f"Unexpected error in Apollo API call: {str(e)}")
             return False, {"error": str(e)}
     
     def enrich_company(self, company_name: str, domain: str = None) -> Tuple[bool, Dict[str, Any]]:
@@ -186,9 +219,18 @@ class ApolloService:
         if domain:
             clean_domain = self._extract_domain_from_url(domain)
             if clean_domain:
-                return self.enrich_organization_by_domain(clean_domain)
+                success, data = self.enrich_organization_by_domain(clean_domain)
+                if success and 'organization' in data:
+                    # Format the organization data
+                    return True, self._format_company_data(data['organization'])
+                elif not success:
+                    logger.warning(f"Organization enrichment failed for {company_name}: {data.get('error', 'Unknown error')}")
+                    # Continue to search by name
+                else:
+                    logger.warning(f"Organization data missing in response for {company_name}")
+                    # Continue to search by name
         
-        # If no domain or domain extraction failed, fallback to organization search
+        # If no domain, domain extraction failed, or organization enrichment failed, fallback to organization search
         self._rate_limit()
         
         endpoint = f"{self.BASE_URL}/organizations/search"
@@ -405,9 +447,9 @@ class ApolloService:
                 if domain:
                     success, company_result = self.enrich_organization_by_domain(domain)
                     
-                    if success and company_result:
-                        # Extract company data
-                        company_data = company_result  # Already formatted
+                    if success and 'organization' in company_result:
+                        # Format the organization data
+                        company_data = self._format_company_data(company_result['organization'])
                         
                         # Update enriched data with company information
                         for key, value in company_data.items():
@@ -419,6 +461,9 @@ class ApolloService:
                         enriched_data['EnrichmentSource'] = 'Apollo.io API'
                         enriched_data['EnrichmentNotes'] = 'Company data enriched successfully via domain'
                         return enriched_data
+                    elif not success:
+                        logger.warning(f"Organization enrichment failed for {company_name}: {company_result.get('error', 'Unknown error')}")
+                        # Continue to next method
             
             # If domain enrichment fails or no website, try by company name
             if company_name:

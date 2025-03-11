@@ -30,11 +30,15 @@ def render_data_editor():
         return
     
     # Get the data
-    if st.session_state.final_data is None:
-        # First time - initialize with enriched data
+    if st.session_state.final_data is None or len(st.session_state.final_data) != len(st.session_state.enriched_data):
+        # Initialize with enriched data or update if enriched data has changed
         st.session_state.final_data = st.session_state.enriched_data.copy()
+        logger.info(f"Initialized final_data with {len(st.session_state.enriched_data)} companies from enriched_data")
     
     df = st.session_state.final_data.copy()
+    
+    # Log data size for debugging
+    logger.info(f"Working with {len(df)} companies in data editor")
     
     st.markdown("""
     Review and edit the company data before exporting to Salesforce. Use the filters to narrow down the list, 
@@ -70,20 +74,30 @@ def render_data_editor():
     
     # Apply filters
     filtered_df = df.copy()
+    
+    # Log before filtering
+    logger.info(f"Before filtering: {len(filtered_df)} companies")
+    
     if enrichment_status:
         filtered_df = filtered_df[filtered_df['EnrichmentStatus'].isin(enrichment_status)]
+        logger.info(f"After enrichment status filter: {len(filtered_df)} companies")
     
     if 'industries' in locals() and industries:
-        filtered_df = filtered_df[filtered_df['Industry'].isin(industries)]
+        # Handle potential NaN values in Industry column
+        industry_filter = filtered_df['Industry'].isin(industries)
+        filtered_df = filtered_df[industry_filter]
+        logger.info(f"After industry filter: {len(filtered_df)} companies")
     
     # Search functionality
     search_term = st.text_input("Search companies", "")
     if search_term:
-        filtered_df = filtered_df[
+        search_filter = (
             filtered_df['Company'].str.contains(search_term, case=False, na=False) |
             filtered_df.get('CompanyDescription', '').str.contains(search_term, case=False, na=False) |
             filtered_df.get('Industry', '').str.contains(search_term, case=False, na=False)
-        ]
+        )
+        filtered_df = filtered_df[search_filter]
+        logger.info(f"After search filter: {len(filtered_df)} companies")
     
     # Display filtered data count
     st.markdown(f"**Showing {len(filtered_df)} of {len(df)} companies**")
@@ -375,11 +389,24 @@ def render_data_editor():
             st.info("No companies with funding data found in the current selection.")
     
     # Update the session state with the edited data (preserving rows not in filtered view)
-    for idx, row in edited_df.iterrows():
-        for col in edited_df.columns:
-            df.at[idx, col] = row[col]
+    if edited_df is not None and not edited_df.empty:
+        logger.info(f"Updating session state with {len(edited_df)} edited companies")
+        for idx, row in edited_df.iterrows():
+            for col in edited_df.columns:
+                df.at[idx, col] = row[col]
     
-    st.session_state.final_data = df
+    # Ensure we're not losing any data
+    if len(df) != len(st.session_state.enriched_data):
+        logger.warning(f"Data size mismatch: final_data has {len(df)} rows but enriched_data has {len(st.session_state.enriched_data)} rows")
+        # If we somehow lost data, restore from enriched_data but preserve edits
+        if len(df) < len(st.session_state.enriched_data):
+            logger.info("Restoring missing data from enriched_data")
+            missing_indices = set(st.session_state.enriched_data.index) - set(df.index)
+            for idx in missing_indices:
+                df.loc[idx] = st.session_state.enriched_data.loc[idx]
+    
+    st.session_state.final_data = df.copy()
+    logger.info(f"Final data updated with {len(df)} companies")
     
     # Show summary of changes
     st.subheader("Summary")
@@ -395,7 +422,7 @@ def render_data_editor():
     # Navigation buttons
     st.subheader("Options")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         if st.button("Back to Enrichment", key="back_to_enrich"):
@@ -408,4 +435,19 @@ def render_data_editor():
                 go_to_step("export")
                 st.rerun()
         else:
-            st.warning("Please select at least one company to continue to export.") 
+            st.warning("Please select at least one company to continue to export.")
+    
+    with col3:
+        # Debug button to show data sizes
+        if st.button("Debug Data", key="debug_data"):
+            st.info(f"""
+            Data sizes:
+            - Enriched data: {len(st.session_state.enriched_data) if st.session_state.enriched_data is not None else 0} companies
+            - Final data: {len(st.session_state.final_data) if st.session_state.final_data is not None else 0} companies
+            - Current filtered view: {len(filtered_df)} companies
+            """)
+            
+            # Show sample of enriched data
+            if st.session_state.enriched_data is not None and not st.session_state.enriched_data.empty:
+                st.write("Sample from enriched_data:")
+                st.write(st.session_state.enriched_data[['Company', 'Industry', 'EnrichmentStatus']].head()) 

@@ -15,6 +15,7 @@ from app.utils.data_processing import prepare_for_enrichment
 from app.services.apollo_service import ApolloService
 from app.services.crunchbase_service import CrunchbaseService
 from app.services.web_scraper import WebScraperService
+from app.utils.enrichment_utils import enrich_company_data
 
 logger = logging.getLogger('csv_processor')
 
@@ -55,10 +56,177 @@ def render_data_enrichment():
     # Enrichment options
     st.subheader("Enrichment Options")
     
-    enrichment_tabs = st.tabs(["Apollo.io API", "Crunchbase API", "Web Scraping", "Results"])
+    enrichment_tabs = st.tabs(["One Click Enrichment", "Apollo.io API", "Crunchbase API", "Web Scraping", "Results"])
+    
+    # One Click Enrichment tab
+    with enrichment_tabs[0]:
+        st.write("Enrich company data using all available methods in one click.")
+        
+        # Check API keys
+        apollo_api_key = st.session_state.api_keys.get('apollo', {}).get('api_key', '')
+        crunchbase_api_key = st.session_state.api_keys.get('crunchbase', {}).get('api_key', '')
+        
+        # Display API key status
+        col1, col2 = st.columns(2)
+        with col1:
+            if apollo_api_key:
+                st.success("Apollo.io API key configured")
+            else:
+                st.warning("Apollo.io API key not configured. Please add it in the sidebar.")
+        
+        with col2:
+            if crunchbase_api_key:
+                st.success("Crunchbase API key configured")
+            else:
+                st.warning("Crunchbase API key not configured. Please add it in the sidebar.")
+        
+        # Web scraping options
+        st.subheader("Web Scraping Options")
+        st.write("Select information to scrape from company websites if API enrichment is incomplete:")
+        
+        scrape_options = st.multiselect(
+            "Select information to scrape:",
+            ["Company Description", "Social Media Links", "Contact Information"],
+            ["Company Description", "Social Media Links", "Contact Information"],
+            key="one_click_scrape_options"
+        )
+        
+        # Enrichment button
+        if st.button("Start One Click Enrichment", key="one_click_enrich", 
+                    disabled=not (apollo_api_key or crunchbase_api_key)):
+            # Prepare data for enrichment if not already done
+            if st.session_state.enriched_data is None:
+                enrichment_df = prepare_for_enrichment(df)
+                st.session_state.enriched_data = enrichment_df
+            else:
+                enrichment_df = st.session_state.enriched_data.copy()
+            
+            # Create progress display
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Update session state with processing status
+            st.session_state.processing_status = {
+                'is_processing': True,
+                'current_operation': 'One Click Enrichment',
+                'progress': 0,
+                'total': len(enrichment_df),
+                'success_count': 0,
+                'error_count': 0,
+                'messages': []
+            }
+            
+            # Create services
+            services = []
+            if apollo_api_key:
+                apollo_service = ApolloService(api_key=apollo_api_key)
+                services.append(('Apollo.io', apollo_service))
+            
+            if crunchbase_api_key:
+                crunchbase_service = CrunchbaseService(api_key=crunchbase_api_key)
+                services.append(('Crunchbase', crunchbase_service))
+            
+            # Create web scraper
+            scraper = WebScraperService()
+            
+            # Define callback for progress updates
+            def update_progress(progress, current, total, success_count, error_count=0, message=""):
+                # Update progress bar
+                progress_bar.progress(progress)
+                # Update status text
+                status_text.text(f"Processing company {current}/{total} ({success_count} enriched successfully)")
+                # Update session state
+                st.session_state.processing_status['progress'] = progress
+                st.session_state.processing_status['success_count'] = success_count
+                st.session_state.processing_status['error_count'] = error_count
+                if message:
+                    st.session_state.processing_status['messages'].append(message)
+            
+            # Perform enrichment
+            with st.spinner("Enriching data with all available methods..."):
+                # Process each company
+                total_companies = len(enrichment_df)
+                success_count = 0
+                error_count = 0
+                
+                for idx, row in enrichment_df.iterrows():
+                    current_company = idx + 1
+                    company_name = row.get('Company', 'Unknown')
+                    
+                    # Skip if already successfully enriched
+                    if row.get('EnrichmentStatus') == 'Success':
+                        success_count += 1
+                        progress = current_company / total_companies
+                        update_progress(progress, current_company, total_companies, success_count, 
+                                       message=f"Skipped {company_name} - already enriched")
+                        continue
+                    
+                    # Convert row to dict
+                    lead_data = row.to_dict()
+                    
+                    # Use the utility function to enrich the company data
+                    enriched_lead = enrich_company_data(
+                        lead_data, 
+                        services, 
+                        scraper=scraper, 
+                        scrape_options=scrape_options
+                    )
+                    
+                    # Update DataFrame with enriched data
+                    for key, value in enriched_lead.items():
+                        if key in enrichment_df.columns:
+                            enrichment_df.at[idx, key] = value
+                    
+                    # Update progress
+                    progress = current_company / total_companies
+                    if enriched_lead.get('EnrichmentStatus') == 'Success':
+                        success_count += 1
+                        update_progress(
+                            progress, 
+                            current_company, 
+                            total_companies, 
+                            success_count, 
+                            message=f"Enriched {company_name} with {enriched_lead.get('EnrichmentSource', 'Unknown')}"
+                        )
+                    else:
+                        error_count += 1
+                        update_progress(
+                            progress, 
+                            current_company, 
+                            total_companies, 
+                            success_count, 
+                            error_count,
+                            f"Failed to enrich {company_name}: {enriched_lead.get('EnrichmentNotes', '')}"
+                        )
+                
+                # Update session state
+                st.session_state.enriched_data = enrichment_df
+                st.session_state.processing_status['is_processing'] = False
+                
+                # Show results
+                if success_count > 0:
+                    st.success(f"Successfully enriched {success_count} out of {total_companies} companies!")
+                    
+                    # Add button to go directly to data editor
+                    if st.button("Continue to Data Editor", key="one_click_to_editor"):
+                        # Ensure enriched_data is properly saved to session state
+                        st.session_state.enriched_data = enrichment_df.copy()
+                        logger.info(f"Saved {len(enrichment_df)} companies to session state before transitioning to editor")
+                        
+                        # Reset final_data to force reinitialization from enriched_data
+                        st.session_state.final_data = None
+                        
+                        # Navigate to edit step
+                        go_to_step("edit")
+                        st.rerun()
+                else:
+                    st.error("No companies were successfully enriched. Please check API keys and data.")
+            
+            # After enrichment, go to Results tab
+            enrichment_tabs[4].is_selected = True
     
     # Apollo.io API tab
-    with enrichment_tabs[0]:
+    with enrichment_tabs[1]:
         st.write("Enrich company data using Apollo.io API.")
         
         # Check API keys
@@ -95,7 +263,7 @@ def render_data_enrichment():
             }
             
             # Define callback for progress updates
-            def update_progress(progress, current, total, success_count):
+            def update_apollo_progress(progress, current, total, success_count):
                 # Update progress bar
                 progress_bar.progress(progress)
                 # Update status text
@@ -106,7 +274,7 @@ def render_data_enrichment():
             
             # Perform enrichment
             with st.spinner("Enriching data with Apollo.io..."):
-                enriched_df = apollo_service.bulk_enrich_leads(enrichment_df, update_callback=update_progress)
+                enriched_df = apollo_service.bulk_enrich_leads(enrichment_df, update_callback=update_apollo_progress)
                 
                 # Update session state
                 st.session_state.enriched_data = enriched_df
@@ -121,10 +289,10 @@ def render_data_enrichment():
                     st.error("No companies were successfully enriched. Please check API key and data.")
             
             # After enrichment, go to Results tab
-            enrichment_tabs[3].is_selected = True
+            enrichment_tabs[4].is_selected = True
     
     # Crunchbase API tab
-    with enrichment_tabs[1]:
+    with enrichment_tabs[2]:
         st.write("Enrich company data using Crunchbase API.")
         
         # Check API keys
@@ -204,17 +372,18 @@ def render_data_enrichment():
                     st.error("No companies were successfully enriched with Crunchbase. Please check API key and data.")
             
             # After enrichment, go to Results tab
-            enrichment_tabs[3].is_selected = True
+            enrichment_tabs[4].is_selected = True
     
     # Web Scraping tab
-    with enrichment_tabs[2]:
+    with enrichment_tabs[3]:
         st.write("Scrape additional information from company websites.")
         
         # Options for web scraping
         scrape_options = st.multiselect(
             "Select information to scrape:",
             ["Company Description", "Social Media Links", "Contact Information"],
-            ["Company Description", "Social Media Links", "Contact Information"]
+            ["Company Description", "Social Media Links", "Contact Information"],
+            key="web_scraping_tab_options"
         )
         
         if st.button("Start Web Scraping", key="start_scraping"):
@@ -274,10 +443,10 @@ def render_data_enrichment():
                     st.error("No company data was successfully scraped. Please check the URLs and try again.")
             
             # After enrichment, go to Results tab
-            enrichment_tabs[3].is_selected = True
+            enrichment_tabs[4].is_selected = True
     
     # Results tab
-    with enrichment_tabs[3]:
+    with enrichment_tabs[4]:
         st.write("View enrichment results and data quality.")
         
         if st.session_state.enriched_data is not None:
@@ -297,6 +466,35 @@ def render_data_enrichment():
                 st.metric("Pending Enrichment", pending_count)
             with col3:
                 st.metric("Failed Enrichment", failed_count)
+            
+            # Display enrichment source statistics
+            st.subheader("Enrichment Sources")
+            
+            # Count companies by enrichment source
+            source_counts = {}
+            for _, row in enriched_df.iterrows():
+                source = row.get('EnrichmentSource', 'Unknown')
+                if source:
+                    if isinstance(source, str):
+                        source_counts[source] = source_counts.get(source, 0) + 1
+            
+            # Display source statistics
+            if source_counts:
+                source_df = pd.DataFrame({
+                    'Source': list(source_counts.keys()),
+                    'Count': list(source_counts.values())
+                })
+                source_df = source_df.sort_values('Count', ascending=False)
+                
+                st.bar_chart(source_df.set_index('Source'))
+            
+            # Display enrichment messages if available
+            if 'processing_status' in st.session_state and st.session_state.processing_status.get('messages'):
+                st.subheader("Enrichment Process Log")
+                
+                with st.expander("View Enrichment Log", expanded=False):
+                    for message in st.session_state.processing_status.get('messages', []):
+                        st.text(message)
             
             # Display tech leadership information
             st.subheader("Technology Leadership Information")
@@ -353,7 +551,7 @@ def render_data_enrichment():
             
             if not sample_companies.empty:
                 for idx, row in sample_companies.iterrows():
-                    with st.expander(f"Company: {row.get('Company', 'Unknown')}"):
+                    with st.expander(f"Company: {row.get('Company', 'Unknown')} (Source: {row.get('EnrichmentSource', 'Unknown')})"):
                         col1, col2 = st.columns(2)
                         
                         with col1:
@@ -422,7 +620,7 @@ def render_data_enrichment():
             # Select columns to display
             display_columns = [
                 'Company', 'CompanyWebsite', 'Industry', 'CompanySize', 
-                'CompanyFunding', 'CompanyLocation', 'EnrichmentStatus'
+                'CompanyFunding', 'CompanyLocation', 'EnrichmentStatus', 'EnrichmentSource'
             ]
             
             # Filter columns that exist in the DataFrame
@@ -433,6 +631,14 @@ def render_data_enrichment():
             
             # Provide option to continue to data editor
             if st.button("Continue to Data Editor", key="continue_to_editor"):
+                # Ensure enriched_data is properly saved to session state
+                st.session_state.enriched_data = enriched_df.copy()
+                logger.info(f"Saved {len(enriched_df)} companies to session state before transitioning to editor")
+                
+                # Reset final_data to force reinitialization from enriched_data
+                st.session_state.final_data = None
+                
+                # Navigate to edit step
                 go_to_step("edit")
                 st.rerun()
         else:
