@@ -57,7 +57,7 @@ def validate_csv_data(df: pd.DataFrame) -> Tuple[bool, List[str]]:
     
     # Look for industry column
     industry_columns = [col for col in df.columns if any(kw in col.lower() for kw in 
-                       ['industry', 'sector', 'vertical', 'category'])]
+                       ['industry', 'industries', 'sector', 'vertical', 'category'])]
     
     if industry_columns:
         messages.append(f"Found industry column(s): {', '.join(industry_columns)}")
@@ -123,7 +123,7 @@ def extract_names_companies(df: pd.DataFrame) -> pd.DataFrame:
     
     # Extract industry if available
     industry_columns = [col for col in df.columns if any(kw in col.lower() for kw in 
-                       ['industry', 'sector', 'vertical', 'category'])]
+                       ['industry', 'industries', 'sector', 'vertical', 'category'])]
     
     if industry_columns:
         industry_col = industry_columns[0]
@@ -131,22 +131,6 @@ def extract_names_companies(df: pd.DataFrame) -> pd.DataFrame:
         logger.info(f"Using '{industry_col}' as industry column")
     else:
         processed_df['Industry'] = None
-    
-    # Create placeholder for Crunchbase URLs if they exist
-    crunchbase_columns = [col for col in df.columns if 'crunchbase' in col.lower()]
-    
-    if crunchbase_columns:
-        crunchbase_col = crunchbase_columns[0]
-        processed_df['CrunchbaseURL'] = df[crunchbase_col]
-        logger.info(f"Using '{crunchbase_col}' for Crunchbase URLs")
-    else:
-        processed_df['CrunchbaseURL'] = None
-    
-    # Add placeholders for first/last name to maintain compatibility with the rest of the app
-    processed_df['FirstName'] = None
-    processed_df['LastName'] = None
-    processed_df['Email'] = None
-    processed_df['Phone'] = None
     
     # Add source information
     processed_df['DataSource'] = 'CSV Import'
@@ -176,26 +160,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         logger.info(f"Removed {initial_rows - len(cleaned_df)} duplicate rows")
     
     # Handle missing values for critical columns
-    cleaned_df['FirstName'] = cleaned_df['FirstName'].fillna('').astype(str).str.strip()
-    cleaned_df['LastName'] = cleaned_df['LastName'].fillna('').astype(str).str.strip()
     cleaned_df['Company'] = cleaned_df['Company'].fillna('').astype(str).str.strip()
-    cleaned_df['Email'] = cleaned_df['Email'].fillna('').astype(str).str.strip()
-    cleaned_df['Phone'] = cleaned_df['Phone'].fillna('').astype(str).str.strip()
     
-    # Standardize email addresses to lowercase
-    cleaned_df['Email'] = cleaned_df['Email'].str.lower()
-    
-    # Standardize phone numbers (remove non-digit characters)
-    cleaned_df['Phone'] = cleaned_df['Phone'].apply(
-        lambda x: re.sub(r'\D', '', x) if pd.notna(x) else ''
-    )
-    
-    # Remove rows where both name and company are empty
-    cleaned_df = cleaned_df[
-        ~((cleaned_df['FirstName'] == '') & 
-          (cleaned_df['LastName'] == '') & 
-          (cleaned_df['Company'] == ''))
-    ]
+    # Remove rows where company is empty
+    cleaned_df = cleaned_df[cleaned_df['Company'] != '']
     
     return cleaned_df
 
@@ -244,6 +212,49 @@ def prepare_for_enrichment(df: pd.DataFrame) -> pd.DataFrame:
     if 'JobTitle' not in enrichment_df.columns:
         enrichment_df['JobTitle'] = None
     
+    # Add new columns for tech leadership and funding
+    if 'TechLeadership' not in enrichment_df.columns:
+        enrichment_df['TechLeadership'] = None
+    
+    if 'TechJobListings' not in enrichment_df.columns:
+        enrichment_df['TechJobListings'] = None
+    
+    if 'CompanyFunding' not in enrichment_df.columns:
+        enrichment_df['CompanyFunding'] = None
+    
+    if 'CompanyFundingAmount' not in enrichment_df.columns:
+        enrichment_df['CompanyFundingAmount'] = None
+    
+    if 'CompanyLatestFundingDate' not in enrichment_df.columns:
+        enrichment_df['CompanyLatestFundingDate'] = None
+    
+    if 'CompanyLatestFundingStage' not in enrichment_df.columns:
+        enrichment_df['CompanyLatestFundingStage'] = None
+    
+    if 'CompanyTechnology' not in enrichment_df.columns:
+        enrichment_df['CompanyTechnology'] = None
+    
+    if 'CompanyTwitter' not in enrichment_df.columns:
+        enrichment_df['CompanyTwitter'] = None
+    
+    if 'CompanyFacebook' not in enrichment_df.columns:
+        enrichment_df['CompanyFacebook'] = None
+    
+    if 'CompanyPhone' not in enrichment_df.columns:
+        enrichment_df['CompanyPhone'] = None
+    
+    if 'EngineeringHeadcount' not in enrichment_df.columns:
+        enrichment_df['EngineeringHeadcount'] = None
+    
+    if 'ITHeadcount' not in enrichment_df.columns:
+        enrichment_df['ITHeadcount'] = None
+    
+    if 'ProductHeadcount' not in enrichment_df.columns:
+        enrichment_df['ProductHeadcount'] = None
+    
+    if 'DataScienceHeadcount' not in enrichment_df.columns:
+        enrichment_df['DataScienceHeadcount'] = None
+    
     logger.info(f"Prepared {len(enrichment_df)} companies for enrichment")
     
     return enrichment_df
@@ -267,29 +278,46 @@ def prepare_for_salesforce(df: pd.DataFrame) -> pd.DataFrame:
     # Add selection column if not present
     if 'Selected' not in sf_df.columns:
         sf_df['Selected'] = True
-        logger.info("Added 'Selected' column with default value True")
     
-    # Add Salesforce status columns
-    if 'SalesforceStatus' not in sf_df.columns:
-        sf_df['SalesforceStatus'] = 'Pending'
+    # Add SF submission status columns
+    if 'SFStatus' not in sf_df.columns:
+        sf_df['SFStatus'] = 'Pending'
     
-    if 'SalesforceId' not in sf_df.columns:
-        sf_df['SalesforceId'] = None
+    if 'SFNotes' not in sf_df.columns:
+        sf_df['SFNotes'] = ''
     
-    if 'SalesforceErrors' not in sf_df.columns:
-        sf_df['SalesforceErrors'] = None
-    
-    # Ensure we have placeholders for required fields
     # For Account object instead of Lead
     if 'AccountName' not in sf_df.columns:
         sf_df['AccountName'] = sf_df['Company']
     
-    # Add dummy contact data if using leads
-    if all(sf_df['FirstName'].isna()):
-        sf_df['FirstName'] = 'Info'  # Default first name
+    # Add required fields for Salesforce
+    if 'FirstName' not in sf_df.columns:
+        sf_df['FirstName'] = 'Tech'  # Default first name
     
-    if all(sf_df['LastName'].isna()):
+    if 'LastName' not in sf_df.columns:
         sf_df['LastName'] = sf_df['Company'].apply(lambda x: f"{x} Contact" if pd.notna(x) else "Unknown")
+    
+    if 'Email' not in sf_df.columns:
+        # Try to extract email from tech leadership if available
+        def extract_tech_email(row):
+            if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+                for leader in row['TechLeadership']:
+                    if leader.get('email'):
+                        return leader.get('email')
+            return f"info@{row.get('CompanyWebsite', '').replace('http://', '').replace('https://', '').replace('www.', '').split('/')[0]}" if row.get('CompanyWebsite') else ''
+        
+        sf_df['Email'] = sf_df.apply(extract_tech_email, axis=1)
+    
+    if 'Phone' not in sf_df.columns:
+        # Try to extract phone from tech leadership if available
+        def extract_tech_phone(row):
+            if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+                for leader in row['TechLeadership']:
+                    if leader.get('phone'):
+                        return leader.get('phone')
+            return row.get('CompanyPhone', '')
+        
+        sf_df['Phone'] = sf_df.apply(extract_tech_phone, axis=1)
     
     logger.info(f"Prepared {len(sf_df)} companies for Salesforce submission")
     

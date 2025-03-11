@@ -44,17 +44,11 @@ def render_data_preview():
     
     with col2:
         complete_leads = len(processed_df[
-            (processed_df['FirstName'] != '') & 
-            (processed_df['LastName'] != '') & 
             (processed_df['Company'] != '')
         ])
         st.metric("Complete Leads", complete_leads, 
                  delta=f"{int(complete_leads/len(processed_df)*100)}%" if len(processed_df) > 0 else "0%")
 
-    with col3:
-        has_email = (processed_df['Email'] != '').sum()
-        st.metric("With Email", has_email, 
-                 delta=f"{int(has_email/len(processed_df)*100)}%" if len(processed_df) > 0 else "0%")
     
     # Show processed data table
     st.subheader("Processed Data")
@@ -128,7 +122,7 @@ def _get_field_mappings(raw_df, processed_df):
             if field in raw_df.columns:
                 source_col = field
             # Field-specific logic
-            elif field == "FirstName" or field == "LastName":
+            elif field in ('FirstName', 'LastName'):
                 # For name fields, look at name-related columns
                 for col in name_columns:
                     # Sample a few rows to see if they match

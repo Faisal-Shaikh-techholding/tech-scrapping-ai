@@ -70,11 +70,10 @@ def render_data_editor():
     
     # Apply filters
     filtered_df = df.copy()
-    
     if enrichment_status:
         filtered_df = filtered_df[filtered_df['EnrichmentStatus'].isin(enrichment_status)]
     
-    if 'Industry' in locals() and industries:
+    if 'industries' in locals() and industries:
         filtered_df = filtered_df[filtered_df['Industry'].isin(industries)]
     
     # Search functionality
@@ -116,52 +115,264 @@ def render_data_editor():
     # Editable Data
     st.subheader("Review & Edit Company Data")
     
-    # Highlight selected rows in the editor
-    def highlight_selected(row):
-        if row['Selected']:
-            return ['background-color: #e6ffe6'] * len(row)
-        return [''] * len(row)
+    # Create tabs for different views of the data
+    data_tabs = st.tabs(["Basic Info", "Tech Leadership", "Tech Stack", "Funding"])
     
-    # Display editable dataframe
-    edited_df = st.data_editor(
-        filtered_df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Selected": st.column_config.CheckboxColumn(
-                "Select",
-                help="Select companies to export",
-                default=True
-            ),
-            "Company": st.column_config.TextColumn(
-                "Company Name",
-                width="large"
-            ),
-            "CompanyWebsite": st.column_config.TextColumn(
-                "Website",
-                width="medium"
-            ),
-            "Industry": st.column_config.TextColumn(
-                "Industry",
-                width="medium"
-            ),
-            "CompanyDescription": st.column_config.TextColumn(
-                "Description",
-                width="large"
-            ),
-            "CompanyLocation": st.column_config.TextColumn(
-                "Location",
-                width="medium"
-            ),
-            "EnrichmentStatus": st.column_config.SelectboxColumn(
-                "Status",
-                options=["Success", "Pending", "Failed"],
-                width="small"
-            )
-        },
-        disabled=["EnrichmentStatus", "EnrichmentSource"],
-        height=500,
-    )
+    # Basic Info tab
+    with data_tabs[0]:
+        # Highlight selected rows in the editor
+        def highlight_selected(row):
+            if row['Selected']:
+                return ['background-color: #e6ffe6'] * len(row)
+            return [''] * len(row)
+        
+        # Display editable dataframe
+        edited_df = st.data_editor(
+            filtered_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Selected": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Select companies to export",
+                    default=True
+                ),
+                "Company": st.column_config.TextColumn(
+                    "Company Name",
+                    width="large"
+                ),
+                "CompanyWebsite": st.column_config.TextColumn(
+                    "Website",
+                    width="medium"
+                ),
+                "Industry": st.column_config.TextColumn(
+                    "Industry",
+                    width="medium"
+                ),
+                "CompanyDescription": st.column_config.TextColumn(
+                    "Description",
+                    width="large"
+                ),
+                "CompanyLocation": st.column_config.TextColumn(
+                    "Location",
+                    width="medium"
+                ),
+                "EnrichmentStatus": st.column_config.SelectboxColumn(
+                    "Status",
+                    options=["Success", "Pending", "Failed"],
+                    width="small"
+                )
+            },
+            disabled=["EnrichmentStatus", "EnrichmentSource"],
+            height=500,
+        )
+    
+    # Tech Leadership tab
+    with data_tabs[1]:
+        st.write("View and edit technology leadership contacts")
+        
+        # Filter to only show companies with tech leadership data
+        tech_leadership_companies = []
+        for idx, row in filtered_df.iterrows():
+            if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+                tech_leadership_companies.append(idx)
+        
+        if tech_leadership_companies:
+            tech_leaders_df = filtered_df.loc[tech_leadership_companies].copy()
+            
+            # Display companies with tech leadership
+            for idx, row in tech_leaders_df.iterrows():
+                with st.expander(f"{row['Company']} - Tech Leadership"):
+                    tech_leaders = row.get('TechLeadership', [])
+                    
+                    if not tech_leaders:
+                        st.write("No technology leadership contacts found.")
+                        continue
+                    
+                    # Create a table for each company's tech leaders
+                    leaders_data = []
+                    for leader in tech_leaders:
+                        leaders_data.append({
+                            "Name": leader.get('name', 'Unknown'),
+                            "Title": leader.get('title', 'N/A'),
+                            "Email": leader.get('email', 'N/A'),
+                            "Phone": leader.get('phone', 'N/A'),
+                            "LinkedIn": leader.get('linkedin', 'N/A')
+                        })
+                    
+                    if leaders_data:
+                        leaders_df = pd.DataFrame(leaders_data)
+                        edited_leaders = st.data_editor(
+                            leaders_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Name": st.column_config.TextColumn("Name", width="medium"),
+                                "Title": st.column_config.TextColumn("Title", width="medium"),
+                                "Email": st.column_config.TextColumn("Email", width="medium"),
+                                "Phone": st.column_config.TextColumn("Phone", width="medium"),
+                                "LinkedIn": st.column_config.LinkColumn("LinkedIn", width="medium")
+                            }
+                        )
+                        
+                        # Update the tech leadership data if edited
+                        if not edited_leaders.equals(leaders_df):
+                            updated_leaders = []
+                            for i, leader_row in edited_leaders.iterrows():
+                                updated_leaders.append({
+                                    "name": leader_row["Name"],
+                                    "title": leader_row["Title"],
+                                    "email": leader_row["Email"],
+                                    "phone": leader_row["Phone"],
+                                    "linkedin": leader_row["LinkedIn"]
+                                })
+                            
+                            # Update the filtered dataframe
+                            filtered_df.at[idx, 'TechLeadership'] = updated_leaders
+                            
+                            # Update the main dataframe
+                            df.at[idx, 'TechLeadership'] = updated_leaders
+        else:
+            st.info("No companies with technology leadership data found in the current selection.")
+    
+    # Tech Stack tab
+    with data_tabs[2]:
+        st.write("View and edit technology stack information")
+        
+        # Filter to only show companies with tech stack data
+        tech_stack_companies = filtered_df[
+            (filtered_df['CompanyTechnology'].notna() & (filtered_df['CompanyTechnology'] != '')) |
+            filtered_df.apply(lambda row: isinstance(row.get('TechJobListings'), list) and len(row.get('TechJobListings', [])) > 0, axis=1)
+        ]
+        
+        if not tech_stack_companies.empty:
+            for idx, row in tech_stack_companies.iterrows():
+                with st.expander(f"{row['Company']} - Tech Stack"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Current Technologies:**")
+                        tech_stack = row.get('CompanyTechnology', '')
+                        edited_tech = st.text_area(
+                            "Technologies", 
+                            value=tech_stack,
+                            key=f"tech_{idx}",
+                            height=100
+                        )
+                        
+                        # Update if changed
+                        if edited_tech != tech_stack:
+                            filtered_df.at[idx, 'CompanyTechnology'] = edited_tech
+                            df.at[idx, 'CompanyTechnology'] = edited_tech
+                    
+                    with col2:
+                        st.write("**Tech Department Sizes:**")
+                        eng_headcount = row.get('EngineeringHeadcount', 0)
+                        it_headcount = row.get('ITHeadcount', 0)
+                        product_headcount = row.get('ProductHeadcount', 0)
+                        data_science_headcount = row.get('DataScienceHeadcount', 0)
+                        
+                        edited_eng = st.number_input(
+                            "Engineering", 
+                            value=int(eng_headcount) if eng_headcount else 0,
+                            key=f"eng_{idx}"
+                        )
+                        edited_it = st.number_input(
+                            "IT", 
+                            value=int(it_headcount) if it_headcount else 0,
+                            key=f"it_{idx}"
+                        )
+                        edited_product = st.number_input(
+                            "Product", 
+                            value=int(product_headcount) if product_headcount else 0,
+                            key=f"product_{idx}"
+                        )
+                        edited_data = st.number_input(
+                            "Data Science", 
+                            value=int(data_science_headcount) if data_science_headcount else 0,
+                            key=f"data_{idx}"
+                        )
+                        
+                        # Update if changed
+                        if edited_eng != eng_headcount:
+                            filtered_df.at[idx, 'EngineeringHeadcount'] = edited_eng
+                            df.at[idx, 'EngineeringHeadcount'] = edited_eng
+                        if edited_it != it_headcount:
+                            filtered_df.at[idx, 'ITHeadcount'] = edited_it
+                            df.at[idx, 'ITHeadcount'] = edited_it
+                        if edited_product != product_headcount:
+                            filtered_df.at[idx, 'ProductHeadcount'] = edited_product
+                            df.at[idx, 'ProductHeadcount'] = edited_product
+                        if edited_data != data_science_headcount:
+                            filtered_df.at[idx, 'DataScienceHeadcount'] = edited_data
+                            df.at[idx, 'DataScienceHeadcount'] = edited_data
+                    
+                    # Display tech job listings if available
+                    tech_jobs = row.get('TechJobListings', [])
+                    if tech_jobs and len(tech_jobs) > 0:
+                        st.write("**Technology Job Listings:**")
+                        for i, job in enumerate(tech_jobs):
+                            st.markdown(f"**{i+1}. {job.get('title', 'Unknown Position')}**")
+                            if job.get('description'):
+                                st.markdown(f"*Description:* {job.get('description')[:200]}...")
+                            if job.get('url'):
+                                st.markdown(f"[View Job Listing]({job.get('url')})")
+                            st.markdown("---")
+        else:
+            st.info("No companies with technology stack data found in the current selection.")
+    
+    # Funding tab
+    with data_tabs[3]:
+        st.write("View and edit funding information")
+        
+        # Filter to only show companies with funding data
+        funding_companies = filtered_df[
+            (filtered_df['CompanyFunding'].notna() & (filtered_df['CompanyFunding'] != ''))
+        ]
+        
+        if not funding_companies.empty:
+            for idx, row in funding_companies.iterrows():
+                with st.expander(f"{row['Company']} - Funding"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Funding Information:**")
+                        funding = row.get('CompanyFunding', 'N/A')
+                        funding_amount = row.get('CompanyFundingAmount', '')
+                        
+                        st.write(f"**Total Funding:** {funding}")
+                        
+                        edited_funding = st.text_input(
+                            "Edit Funding", 
+                            value=funding,
+                            key=f"funding_{idx}"
+                        )
+                        
+                        # Update if changed
+                        if edited_funding != funding:
+                            filtered_df.at[idx, 'CompanyFunding'] = edited_funding
+                            df.at[idx, 'CompanyFunding'] = edited_funding
+                    
+                    with col2:
+                        st.write("**Latest Funding Round:**")
+                        funding_date = row.get('CompanyLatestFundingDate', 'N/A')
+                        funding_stage = row.get('CompanyLatestFundingStage', 'N/A')
+                        
+                        st.write(f"**Date:** {funding_date}")
+                        st.write(f"**Stage:** {funding_stage}")
+                        
+                        edited_stage = st.text_input(
+                            "Edit Stage", 
+                            value=funding_stage,
+                            key=f"stage_{idx}"
+                        )
+                        
+                        # Update if changed
+                        if edited_stage != funding_stage:
+                            filtered_df.at[idx, 'CompanyLatestFundingStage'] = edited_stage
+                            df.at[idx, 'CompanyLatestFundingStage'] = edited_stage
+        else:
+            st.info("No companies with funding data found in the current selection.")
     
     # Update the session state with the edited data (preserving rows not in filtered view)
     for idx, row in edited_df.iterrows():

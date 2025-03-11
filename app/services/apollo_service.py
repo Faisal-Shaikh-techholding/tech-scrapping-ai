@@ -11,8 +11,7 @@ import pandas as pd
 import time
 import logging
 import random
-from typing import Dict, Any, List, Optional, Tuple
-import re
+from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger('csv_processor')
 
@@ -106,7 +105,7 @@ class ApolloService:
             params["q_emails"] = email
         
         try:
-            response = requests.get(endpoint, params=params, headers=self.headers)
+            response = requests.get(endpoint, params=params, headers=self.headers, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -116,10 +115,10 @@ class ApolloService:
             if data and 'people' in data and len(data['people']) > 0:
                 # Return the most relevant person (first result)
                 return True, self._format_person_data(data['people'][0])
-            else:
-                logger.warning("No results found in Apollo for %s %s at %s", 
-                              first_name, last_name, company_name)
-                return False, {}
+            
+            logger.warning("No results found in Apollo for %s %s at %s", 
+                          first_name, last_name, company_name or "N/A")
+            return False, {}
                 
         except requests.exceptions.RequestException as e:
             logger.error("Apollo API error: %s", str(e))
@@ -144,7 +143,7 @@ class ApolloService:
         # Clean up domain if needed (remove protocols, www, trailing slashes)
         clean_domain = self._extract_domain_from_url(domain)
         if not clean_domain:
-            logger.warning(f"Failed to extract valid domain from {domain}")
+            logger.warning("Failed to extract valid domain from %s", domain)
             return False, {}
         
         endpoint = f"{self.BASE_URL}/organizations/enrich"
@@ -156,7 +155,7 @@ class ApolloService:
         }
         
         try:
-            response = requests.get(endpoint, params=params, headers=self.headers)
+            response = requests.get(endpoint, params=params, headers=self.headers, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -164,9 +163,9 @@ class ApolloService:
             # Check if we got any results - organization data is in the 'organization' key
             if data and 'organization' in data and data['organization']:
                 return True, self._format_company_data(data['organization'])
-            else:
-                logger.warning("No organization found in Apollo for domain: %s", clean_domain)
-                return False, {}
+            
+            logger.warning("No organization found in Apollo for domain: %s", clean_domain)
+            return False, {}
                 
         except requests.exceptions.RequestException as e:
             logger.error("Apollo API error (organization enrichment): %s", str(e))
@@ -203,7 +202,7 @@ class ApolloService:
         }
         
         try:
-            response = requests.get(endpoint, params=params, headers=self.headers)
+            response = requests.get(endpoint, params=params, headers=self.headers, timeout=30)
             response.raise_for_status()
             
             data = response.json()
@@ -224,9 +223,9 @@ class ApolloService:
                 
                 # If domain enrichment failed or wasn't possible, return search result
                 return True, self._format_company_data(org_data)
-            else:
-                logger.warning("No company results found in Apollo for %s", company_name)
-                return False, {}
+            
+            logger.warning("No company results found in Apollo for %s", company_name)
+            return False, {}
                 
         except requests.exceptions.RequestException as e:
             logger.error("Apollo API error: %s", str(e))
@@ -293,22 +292,88 @@ class ApolloService:
             "Company": company_data.get("name", ""),
             "CompanyWebsite": company_data.get("website_url", ""),
             "Industry": company_data.get("industry", ""),
-            "CompanySize": company_data.get("size", ""),
-            "CompanyDescription": company_data.get("short_description", ""),
+            "CompanySize": company_data.get("estimated_num_employees", ""),
+            "CompanyDescription": company_data.get("short_description", "") or company_data.get("seo_description", ""),
             "CompanyLocation": ", ".join(filter(None, [
                 company_data.get("city", ""),
                 company_data.get("state", ""),
                 company_data.get("country", "")
             ])),
             "CompanyIndustry": company_data.get("industry", ""),
-            "CompanyFunding": company_data.get("total_funding", ""),
-            "CompanyTechnology": ", ".join(company_data.get("technologies", [])) if company_data.get("technologies") else "",
+            "CompanyFunding": company_data.get("total_funding_printed", "") or company_data.get("total_funding", ""),
+            "CompanyFundingAmount": company_data.get("total_funding", ""),
+            "CompanyLatestFundingDate": company_data.get("latest_funding_round_date", ""),
+            "CompanyLatestFundingStage": company_data.get("latest_funding_stage", ""),
+            "CompanyTechnology": ", ".join(company_data.get("technology_names", []) or company_data.get("technologies", []) or []),
             "CompanyLinkedIn": company_data.get("linkedin_url", ""),
+            "CompanyTwitter": company_data.get("twitter_url", ""),
+            "CompanyFacebook": company_data.get("facebook_url", ""),
             "CompanyFounded": company_data.get("founded_year", ""),
             "CompanyEmployeeCount": company_data.get("estimated_num_employees", ""),
+            "CompanyPhone": company_data.get("phone", "") or (company_data.get("primary_phone", {}) or {}).get("number", ""),
             "EnrichmentSource": "Apollo.io",
             "EnrichmentStatus": "Success"
         }
+        
+        # Extract tech leadership contacts
+        tech_leadership = []
+        org_chart_people_ids = company_data.get("org_chart_root_people_ids", [])
+        
+        # If we have org chart data, extract tech leadership contacts
+        if "org_chart_data" in company_data and org_chart_people_ids:
+            org_chart = company_data.get("org_chart_data", {})
+            for person_id in org_chart_people_ids:
+                person = org_chart.get(person_id, {})
+                title = person.get("title", "").lower()
+                
+                # Check if this is a tech leadership role
+                is_tech_leader = any(tech_term in title for tech_term in [
+                    "cto", "chief technology", "vp of tech", "vp tech", "vp, tech", 
+                    "chief information", "cio", "head of engineering", "vp of engineering",
+                    "vp engineering", "vp, engineering", "director of technology",
+                    "director of engineering", "tech lead", "engineering lead"
+                ])
+                
+                if is_tech_leader:
+                    contact_info = {
+                        "name": f"{person.get('first_name', '')} {person.get('last_name', '')}",
+                        "title": person.get("title", ""),
+                        "email": person.get("email", ""),
+                        "phone": person.get("phone", ""),
+                        "linkedin": person.get("linkedin_url", "")
+                    }
+                    tech_leadership.append(contact_info)
+        
+        # Store tech leadership contacts
+        formatted_data["TechLeadership"] = tech_leadership
+        
+        # Extract job listings for tech stack insights
+        job_listings = []
+        if "job_listings" in company_data:
+            for job in company_data.get("job_listings", []):
+                if any(tech_term in job.get("title", "").lower() for tech_term in [
+                    "developer", "engineer", "software", "data", "tech", "it ", "information technology",
+                    "devops", "cloud", "infrastructure", "security", "web", "mobile", "frontend", "backend",
+                    "full stack", "fullstack", "architect"
+                ]):
+                    job_info = {
+                        "title": job.get("title", ""),
+                        "description": job.get("description", ""),
+                        "url": job.get("url", ""),
+                        "posted_date": job.get("posted_date", "")
+                    }
+                    job_listings.append(job_info)
+        
+        # Store tech job listings
+        formatted_data["TechJobListings"] = job_listings
+        
+        # Extract departmental headcount for engineering/IT
+        if "departmental_head_count" in company_data:
+            dept_counts = company_data.get("departmental_head_count", {})
+            formatted_data["EngineeringHeadcount"] = dept_counts.get("engineering", 0)
+            formatted_data["ITHeadcount"] = dept_counts.get("information_technology", 0)
+            formatted_data["ProductHeadcount"] = dept_counts.get("product_management", 0)
+            formatted_data["DataScienceHeadcount"] = dept_counts.get("data_science", 0)
         
         return formatted_data
     
@@ -374,44 +439,19 @@ class ApolloService:
                     enriched_data['EnrichmentNotes'] = 'Company data enriched successfully via name'
                     return enriched_data
             
-            # If we got here, company enrichment failed - try person enrichment as fallback
-            first_name = enriched_data.get('FirstName')
-            last_name = enriched_data.get('LastName')
-            
-            if first_name and last_name:
-                success, person_result = self.enrich_person(
-                    first_name=first_name,
-                    last_name=last_name,
-                    company_name=company_name
-                )
-                
-                if success and person_result:
-                    # Update enriched data with person information
-                    for key, value in person_result.items():
-                        if value:  # Only update if we have a value
-                            enriched_data[key] = value
-                    
-                    enriched_data['EnrichmentStatus'] = 'Success'
-                    enriched_data['EnrichmentSource'] = 'Apollo.io API'
-                    enriched_data['EnrichmentNotes'] = 'Person data enriched successfully'
-                    return enriched_data
-            
             # If we got here, all enrichment attempts failed
             enriched_data['EnrichmentStatus'] = 'Failed'
             
             if not company_name and not company_website:
                 enriched_data['EnrichmentNotes'] = 'Missing both company name and website'
-                logger.warning(f"Skipping Apollo enrichment for lead without company information: {lead_data}")
-            elif not first_name or not last_name:
-                enriched_data['EnrichmentNotes'] = 'Company enrichment failed and missing person name data'
-                logger.warning(f"Skipping Apollo enrichment for lead without name")
+                logger.warning("Skipping Apollo enrichment for lead without company information: %s", lead_data)
             else:
                 enriched_data['EnrichmentNotes'] = 'All enrichment attempts failed'
             
         except Exception as e:
             enriched_data['EnrichmentStatus'] = 'Failed'
             enriched_data['EnrichmentNotes'] = f"Error during enrichment: {str(e)}"
-            logger.error(f"Error enriching lead with Apollo.io: {str(e)}")
+            logger.error("Error enriching lead with Apollo.io: %s", str(e))
         
         return enriched_data
     

@@ -41,17 +41,14 @@ def render_data_enrichment():
     company_count = len(df)
     companies_with_website = df['CompanyWebsite'].notna().sum()
     companies_with_industry = df['Industry'].notna().sum()
-    companies_with_crunchbase = df['CrunchbaseURL'].notna().sum() if 'CrunchbaseURL' in df.columns else 0
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total Companies", company_count)
     with col2:
         st.metric("With Website", companies_with_website)
     with col3:
         st.metric("With Industry", companies_with_industry)
-    with col4:
-        st.metric("With Crunchbase URLs", companies_with_crunchbase)
     
     st.markdown("---")
     
@@ -281,21 +278,165 @@ def render_data_enrichment():
     
     # Results tab
     with enrichment_tabs[3]:
-        # Display enrichment results
+        st.write("View enrichment results and data quality.")
+        
         if st.session_state.enriched_data is not None:
-            _display_enrichment_status(st.session_state.enriched_data)
+            enriched_df = st.session_state.enriched_data.copy()
             
-            # Provide option to continue
+            # Display enrichment statistics
+            st.subheader("Enrichment Statistics")
+            
+            success_count = (enriched_df['EnrichmentStatus'] == 'Success').sum()
+            pending_count = (enriched_df['EnrichmentStatus'] == 'Pending').sum()
+            failed_count = (enriched_df['EnrichmentStatus'] == 'Failed').sum()
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Successfully Enriched", success_count)
+            with col2:
+                st.metric("Pending Enrichment", pending_count)
+            with col3:
+                st.metric("Failed Enrichment", failed_count)
+            
+            # Display tech leadership information
+            st.subheader("Technology Leadership Information")
+            
+            # Count companies with tech leadership data
+            has_tech_leadership = 0
+            for _, row in enriched_df.iterrows():
+                if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+                    has_tech_leadership += 1
+            
+            st.metric("Companies with Tech Leadership Data", has_tech_leadership)
+            
+            # Display tech stack information
+            st.subheader("Technology Stack Information")
+            
+            # Count companies with technology data
+            has_tech_data = (enriched_df['CompanyTechnology'].notna() & 
+                            (enriched_df['CompanyTechnology'] != '')).sum()
+            
+            # Count companies with tech job listings
+            has_job_listings = 0
+            for _, row in enriched_df.iterrows():
+                if isinstance(row.get('TechJobListings'), list) and len(row.get('TechJobListings', [])) > 0:
+                    has_job_listings += 1
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Companies with Tech Stack Data", has_tech_data)
+            with col2:
+                st.metric("Companies with Tech Job Listings", has_job_listings)
+            
+            # Display company size and funding information
+            st.subheader("Company Size and Funding")
+            
+            # Count companies with size data
+            has_size_data = (enriched_df['CompanySize'].notna() & 
+                            (enriched_df['CompanySize'] != '')).sum()
+            
+            # Count companies with funding data
+            has_funding_data = (enriched_df['CompanyFunding'].notna() & 
+                               (enriched_df['CompanyFunding'] != '')).sum()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Companies with Size Data", has_size_data)
+            with col2:
+                st.metric("Companies with Funding Data", has_funding_data)
+            
+            # Display sample of enriched data
+            st.subheader("Sample Enriched Data")
+            
+            # Select a sample company with good enrichment
+            sample_companies = enriched_df[enriched_df['EnrichmentStatus'] == 'Success'].head(5)
+            
+            if not sample_companies.empty:
+                for idx, row in sample_companies.iterrows():
+                    with st.expander(f"Company: {row.get('Company', 'Unknown')}"):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("**Basic Information**")
+                            st.write(f"**Industry:** {row.get('Industry', 'N/A')}")
+                            st.write(f"**Size:** {row.get('CompanySize', 'N/A')} employees")
+                            st.write(f"**Founded:** {row.get('CompanyFounded', 'N/A')}")
+                            st.write(f"**Location:** {row.get('CompanyLocation', 'N/A')}")
+                            
+                            if row.get('CompanyFunding'):
+                                st.write(f"**Total Funding:** {row.get('CompanyFunding', 'N/A')}")
+                                if row.get('CompanyLatestFundingDate'):
+                                    st.write(f"**Latest Funding:** {row.get('CompanyLatestFundingStage', 'N/A')} on {row.get('CompanyLatestFundingDate', 'N/A')}")
+                        
+                        with col2:
+                            st.write("**Technology Information**")
+                            if row.get('CompanyTechnology'):
+                                st.write(f"**Tech Stack:** {row.get('CompanyTechnology', 'N/A')}")
+                            
+                            # Display engineering headcount if available
+                            eng_headcount = row.get('EngineeringHeadcount', 0)
+                            it_headcount = row.get('ITHeadcount', 0)
+                            product_headcount = row.get('ProductHeadcount', 0)
+                            data_science_headcount = row.get('DataScienceHeadcount', 0)
+                            
+                            if any([eng_headcount, it_headcount, product_headcount, data_science_headcount]):
+                                st.write("**Tech Department Sizes:**")
+                                if eng_headcount:
+                                    st.write(f"- Engineering: {eng_headcount}")
+                                if it_headcount:
+                                    st.write(f"- IT: {it_headcount}")
+                                if product_headcount:
+                                    st.write(f"- Product: {product_headcount}")
+                                if data_science_headcount:
+                                    st.write(f"- Data Science: {data_science_headcount}")
+                        
+                        # Display tech leadership contacts if available
+                        tech_leaders = row.get('TechLeadership', [])
+                        if tech_leaders and len(tech_leaders) > 0:
+                            st.write("**Technology Leadership:**")
+                            for leader in tech_leaders:
+                                st.write(f"- **{leader.get('name', 'Unknown')}**, {leader.get('title', 'N/A')}")
+                                contact_info = []
+                                if leader.get('email'):
+                                    contact_info.append(f"Email: {leader.get('email')}")
+                                if leader.get('phone'):
+                                    contact_info.append(f"Phone: {leader.get('phone')}")
+                                if leader.get('linkedin'):
+                                    contact_info.append(f"[LinkedIn Profile]({leader.get('linkedin')})")
+                                
+                                if contact_info:
+                                    st.write("  " + " | ".join(contact_info))
+                        
+                        # Display tech job listings if available
+                        tech_jobs = row.get('TechJobListings', [])
+                        if tech_jobs and len(tech_jobs) > 0:
+                            st.write("**Technology Job Listings:**")
+                            for job in tech_jobs[:3]:  # Show up to 3 jobs
+                                st.write(f"- **{job.get('title', 'Unknown Position')}**")
+                                if job.get('url'):
+                                    st.write(f"  [View Job Listing]({job.get('url')})")
+            
+            # Display full enriched data table
+            st.subheader("Full Enriched Data")
+            
+            # Select columns to display
+            display_columns = [
+                'Company', 'CompanyWebsite', 'Industry', 'CompanySize', 
+                'CompanyFunding', 'CompanyLocation', 'EnrichmentStatus'
+            ]
+            
+            # Filter columns that exist in the DataFrame
+            display_columns = [col for col in display_columns if col in enriched_df.columns]
+            
+            # Display the table
+            st.dataframe(enriched_df[display_columns])
+            
+            # Provide option to continue to data editor
             if st.button("Continue to Data Editor", key="continue_to_editor"):
-                # Save final data to session state if not already done
-                if st.session_state.final_data is None:
-                    st.session_state.final_data = st.session_state.enriched_data.copy()
-                
-                # Go to next step
                 go_to_step("edit")
                 st.rerun()
         else:
-            st.info("No enrichment performed yet. Use the API Enrichment or Web Scraping tabs to enrich your data.")
+            st.info("No enriched data available yet. Please use one of the enrichment methods first.")
 
 def _display_enrichment_status(df):
     """Display the current enrichment status."""

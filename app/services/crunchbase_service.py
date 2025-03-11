@@ -146,54 +146,59 @@ class CrunchbaseService:
     
     def format_organization_data(self, org_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Format organization data into a standardized structure.
+        Format the organization data from Crunchbase to a standardized format.
         
         Args:
-            org_data: Raw organization data from Crunchbase
+            org_data (Dict): Raw organization data from Crunchbase
             
         Returns:
-            Dictionary with formatted organization data
+            Dict: Formatted organization data
         """
-        properties = org_data.get('properties', {})
+        properties = org_data.get("properties", {})
         
-        # Extract basic information
         formatted_data = {
-            'Company': properties.get('name', ''),
-            'CompanyWebsite': properties.get('website', {}).get('value', ''),
-            'CompanyDescription': properties.get('short_description', properties.get('description', '')),
-            'Industry': self._extract_industries(org_data),
-            'CompanySize': self._extract_company_size(properties),
-            'CompanyLocation': self._extract_location(properties),
-            'CompanyFounded': properties.get('founded_on', {}).get('value', ''),
-            'CompanySocialLinks': self._extract_social_links(properties),
-            'FundingTotal': properties.get('funding_total', {}).get('value_usd', ''),
-            'OperatingStatus': properties.get('operating_status', '')
+            "Company": properties.get("name", ""),
+            "CompanyWebsite": properties.get("website", {}).get("value", ""),
+            "Industry": self._extract_industry(org_data),
+            "CompanySize": self._extract_company_size(properties),
+            "CompanyDescription": properties.get("short_description", ""),
+            "CompanyLocation": self._extract_location(properties),
+            "CompanyFounded": properties.get("founded_on", {}).get("value", ""),
+            "CompanyFunding": properties.get("total_funding_usd", ""),
+            "EnrichmentSource": "Crunchbase API",
+            "EnrichmentStatus": "Success"
         }
+        
+        # Extract social links
+        social_links = self._extract_social_links(properties)
+        if social_links.get("linkedin"):
+            formatted_data["CompanyLinkedIn"] = social_links.get("linkedin")
+        if social_links.get("twitter"):
+            formatted_data["CompanyTwitter"] = social_links.get("twitter")
+        if social_links.get("facebook"):
+            formatted_data["CompanyFacebook"] = social_links.get("facebook")
         
         return formatted_data
     
-    def _extract_industries(self, org_data: Dict[str, Any]) -> str:
+    def _extract_industry(self, org_data: Dict[str, Any]) -> str:
         """Extract industry categories from organization data."""
         try:
-            cards = org_data.get('cards', {})
-            categories = cards.get('categories', {}).get('entities', [])
+            categories = []
             
-            if categories:
-                # Extract category names
-                category_names = [cat.get('properties', {}).get('name', '') for cat in categories]
-                # Filter out empty names and join with commas
-                return ', '.join(filter(None, category_names))
+            # Get categories from relationships
+            relationships = org_data.get("relationships", {})
+            categories_data = relationships.get("categories", {}).get("items", [])
             
-            # Fallback to category groups
-            category_groups = org_data.get('properties', {}).get('category_groups', [])
-            if category_groups:
-                return ', '.join(category_groups)
+            for category in categories_data:
+                properties = category.get("properties", {})
+                category_name = properties.get("name")
+                if category_name:
+                    categories.append(category_name)
             
-            return ''
-        
+            return ", ".join(categories) if categories else ""
         except Exception as e:
-            logger.error(f"Error extracting industries: {str(e)}")
-            return ''
+            logger.error(f"Error extracting industry: {str(e)}")
+            return ""
     
     def _extract_company_size(self, properties: Dict[str, Any]) -> str:
         """Extract company size information."""
@@ -235,23 +240,23 @@ class CrunchbaseService:
         # Get LinkedIn URL
         linkedin = properties.get('linkedin', {}).get('value', '')
         if linkedin:
-            social_links['LinkedIn'] = linkedin
+            social_links['linkedin'] = linkedin
         
         # Get Twitter URL
         twitter = properties.get('twitter', {}).get('value', '')
         if twitter:
-            social_links['Twitter'] = twitter
+            social_links['twitter'] = twitter
         
         # Get Facebook URL
         facebook = properties.get('facebook', {}).get('value', '')
         if facebook:
-            social_links['Facebook'] = facebook
+            social_links['facebook'] = facebook
         
         return social_links
     
     def enrich_company(self, company_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Enrich company data using Crunchbase.
+        Enrich a company with Crunchbase data.
         
         Args:
             company_data: Dictionary containing company data
@@ -271,61 +276,50 @@ class CrunchbaseService:
             company_name = enriched_data.get('Company', '')
             company_website = enriched_data.get('CompanyWebsite', '')
             
-            # Check Crunchbase URL if available
-            crunchbase_url = enriched_data.get('CrunchbaseURL', '')
-            
-            if crunchbase_url and '/organization/' in crunchbase_url:
-                # Extract UUID from Crunchbase URL
-                uuid = crunchbase_url.split('/organization/')[1].strip('/')
-                success, org_details = self.get_organization_details(uuid)
-            elif company_name or company_website:
-                # Search for organization
-                success, org_data = self.search_organization(
+            # First try to search by company name and domain
+            if company_name:
+                success, search_results = self.search_organization(
                     company_name=company_name,
                     domain=company_website
                 )
                 
-                if success and org_data:
-                    # Get UUID for detailed information
-                    uuid = org_data.get('uuid', '')
+                if success and search_results:
+                    # Get organization UUID
+                    uuid = search_results.get('uuid')
+                    
                     if uuid:
+                        # Get detailed organization information
                         success, org_details = self.get_organization_details(uuid)
-                    else:
-                        org_details = org_data
-                else:
-                    success = False
-                    org_details = {}
-            else:
-                success = False
-                org_details = {}
+                        
+                        if success and org_details:
+                            # Format organization data
+                            formatted_data = self.format_organization_data(org_details)
+                            
+                            # Update enriched data with organization information
+                            for key, value in formatted_data.items():
+                                if value:  # Only update if we have a value
+                                    enriched_data[key] = value
+                            
+                            # Mark as successful
+                            enriched_data['EnrichmentStatus'] = 'Success'
+                            enriched_data['EnrichmentSource'] = 'Crunchbase API'
+                            enriched_data['EnrichmentNotes'] = 'Company data enriched successfully'
+                            return enriched_data
             
-            if success and org_details:
-                # Format organization data
-                formatted_data = self.format_organization_data(org_details)
-                
-                # Update enriched data with organization information
-                for key, value in formatted_data.items():
-                    if value and not enriched_data.get(key):  # Only update if we have a value and field is empty
-                        enriched_data[key] = value
-                
-                # Mark as successful
-                enriched_data['EnrichmentStatus'] = 'Success'
-                if enriched_data.get('EnrichmentSource'):
-                    enriched_data['EnrichmentSource'] += ', Crunchbase API'
-                else:
-                    enriched_data['EnrichmentSource'] = 'Crunchbase API'
-                
-                enriched_data['EnrichmentNotes'] = 'Company data enriched from Crunchbase'
+            # If we got here, enrichment failed
+            enriched_data['EnrichmentStatus'] = 'Failed'
+            
+            if not company_name:
+                enriched_data['EnrichmentNotes'] = 'Missing company name'
+                logger.warning("Skipping Crunchbase enrichment for lead without company name")
             else:
-                if enriched_data['EnrichmentStatus'] == 'Pending':
-                    enriched_data['EnrichmentStatus'] = 'Failed'
-                    enriched_data['EnrichmentNotes'] = 'No data found in Crunchbase'
-        
+                enriched_data['EnrichmentNotes'] = 'No matching company found in Crunchbase'
+                logger.warning(f"No matching company found in Crunchbase for: {company_name}")
+            
         except Exception as e:
+            enriched_data['EnrichmentStatus'] = 'Failed'
+            enriched_data['EnrichmentNotes'] = f"Error during enrichment: {str(e)}"
             logger.error(f"Error enriching company with Crunchbase: {str(e)}")
-            if enriched_data['EnrichmentStatus'] == 'Pending':
-                enriched_data['EnrichmentStatus'] = 'Failed'
-                enriched_data['EnrichmentNotes'] = f"Error during Crunchbase enrichment: {str(e)}"
         
         return enriched_data
     
