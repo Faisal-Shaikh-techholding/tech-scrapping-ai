@@ -4,38 +4,27 @@
 Enrich and Export Component
 
 This module handles enriching company data and exporting it to Salesforce
-in a single, streamlined interface.
+in a streamlined, AI-powered interface.
 """
 
 import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime
+from typing import Optional
 
 from app.utils.session_state import go_to_step
-from app.services.apollo_service import ApolloService
-from app.services.crunchbase_service import CrunchbaseService
-from app.services.web_scraper import WebScraperService
 from app.services.salesforce_service import SalesforceService
-from app.utils.enrichment.progress_utils import create_progress_tracker, should_stop_processing
-from app.utils.enrichment.one_click import perform_one_click_enrichment
-from app.utils.enrichment.service_enrichment import (
-    perform_apollo_enrichment,
-    perform_crunchbase_enrichment,
-    perform_web_scraping
-)
-from app.utils.enrichment.results_display import (
-    display_enrichment_statistics,
-    display_enrichment_sources,
-    display_tech_leadership_info,
-    display_tech_stack_info,
-    display_sample_companies,
-    display_full_data_table
+from app.utils.enrichment.progress_utils import create_progress_tracker
+
+# Import the AI-powered enrichment module
+from app.utils.enrichment.ai_enrichment import (
+    render_ai_enrichment_tab
 )
 
 def render_enrich_export():
-    """Render the enrichment and export interface."""
-    st.header("Step 3: Enrich Data & Send to Salesforce")
+    """Render the enrich and export interface."""
+    st.header("Step 3: Enrich & Export")
     
     # Check if data exists
     if st.session_state.data is None:
@@ -49,498 +38,145 @@ def render_enrich_export():
     # Get the data
     df = st.session_state.data.copy()
     
-    # Create tabs for enrichment and export options
-    tabs = st.tabs(["One-Click Enrichment", "Service Enrichment", "Results", "Export to Salesforce"])
+    # Create tabs for AI enrichment and results/export
+    tabs = st.tabs([
+        "AI Enrichment",  # Default tab
+        "Results & Export"
+    ])
     
-    # Tab 1: One-Click Enrichment
+    # AI Enrichment Tab
     with tabs[0]:
-        df = render_one_click_tab(df)
+        enriched_df = render_ai_enrichment_tab(df)
+        if enriched_df is not df:  # Changed?
+            st.session_state.data = enriched_df
     
-    # Tab 2: Service Enrichment
+    # Results and Export Tab
     with tabs[1]:
-        df = render_service_enrichment_tab(df)
-    
-    # Tab 3: Results Display
-    with tabs[2]:
-        render_results_tab(df)
-    
-    # Tab 4: Salesforce Export
-    with tabs[3]:
-        render_salesforce_tab(df)
-    
-    # Update session state with the potentially enriched data
-    st.session_state.data = df
+        render_results_export_tab(st.session_state.data)
     
     # Navigation buttons
-    col1, col2 = st.columns([1, 4])
+    col1, _ = st.columns([1, 4])
     with col1:
         if st.button("Back to Data View", key="back_to_view"):
             go_to_step("view")
             st.rerun()
 
-def render_one_click_tab(df):
-    """Render the one-click enrichment tab."""
-    st.subheader("One-Click Enrichment")
-    st.write("Enrich your data using all available services with a single click.")
+def render_results_export_tab(df: pd.DataFrame):
+    """
+    Render the results and export tab.
     
-    # Using all services by default
-    services = ["apollo", "crunchbase", "webscraping"]
+    Args:
+        df: DataFrame containing enriched company data
+    """
+    st.subheader("Results & Export")
     
-    st.write("#### Enrichment Services")
-    st.info("All three services (Apollo.io API, Crunchbase API, and Web Scraping) will be used for One-Click Enrichment.")
+    # Create tabs for results and export
+    result_export_tabs = st.tabs(["Enrichment Results", "Export to Salesforce"])
     
-    # Create services
-    apollo_service = None
-    crunchbase_service = None
-    web_scraper = None
-    
-    # Initialize services
-    apollo_key = st.session_state.api_keys.get('apollo', '')
-    if apollo_key:
-        apollo_service = ApolloService(api_key=apollo_key)
-    else:
-        st.warning("Apollo.io API key not set. Please add it in the sidebar settings.")
-    
-    crunchbase_key = st.session_state.api_keys.get('crunchbase', '')
-    if crunchbase_key:
-        crunchbase_service = CrunchbaseService(api_key=crunchbase_key)
-    else:
-        st.warning("Crunchbase API key not set. Please add it in the sidebar settings.")
-    
-    web_scraper = WebScraperService()
-    
-    # Default scraping options
-    scraping_options = {
-        "skip_enriched": True,
-        "extract_social": True,
-        "extract_description": True,
-        "extract_contacts": True
-    }
-    
-    # Start enrichment button
-    if st.button("Start One-Click Enrichment", key="start_one_click", 
-                 disabled=st.session_state.processing_status['is_processing']):
-        # Set up progress tracking
-        progress_tracker = create_progress_tracker()
-        
-        # Update processing status
-        st.session_state.processing_status['is_processing'] = True
-        st.session_state.processing_status['current_operation'] = "One-Click Enrichment"
-        
-        # Perform enrichment
-        try:
-            enriched_df = perform_one_click_enrichment(
-                df, 
-                services, 
-                web_scraper, 
-                scraping_options, 
-                progress_tracker
-            )
+    # Results Tab
+    with result_export_tabs[0]:
+        # Check if data has been enriched
+        if 'EnrichmentStatus' not in df.columns:
+            st.warning("No enrichment data found. Please run enrichment first.")
+        else:
+            # Display enrichment statistics
+            st.subheader("Enrichment Statistics")
             
-            if not should_stop_processing():
-                st.success("One-click enrichment completed!")
-                # Update the dataframe
-                df = enriched_df
-            else:
-                st.warning("Enrichment was stopped by user.")
-        except Exception as e:
-            st.error(f"Error during enrichment: {str(e)}")
-        finally:
-            # Reset processing status
-            st.session_state.processing_status['is_processing'] = False
-    
-    return df
-
-def render_service_enrichment_tab(df):
-    """Render the service-specific enrichment tab."""
-    st.subheader("Service-Specific Enrichment")
-    
-    service_tabs = st.tabs(["Apollo.io API", "Crunchbase API", "Web Scraping"])
-    
-    # Tab 1: Apollo.io API
-    with service_tabs[0]:
-        df = render_apollo_tab(df)
-    
-    # Tab 2: Crunchbase API
-    with service_tabs[1]:
-        df = render_crunchbase_tab(df)
-    
-    # Tab 3: Web Scraping
-    with service_tabs[2]:
-        df = render_web_scraping_tab(df)
-    
-    return df
-
-def render_apollo_tab(df):
-    """Render the Apollo.io API enrichment tab."""
-    st.write("#### Apollo.io API Enrichment")
-    st.write("Enrich company data using the Apollo.io API.")
-    
-    # Check if API key is set
-    apollo_key = st.session_state.api_keys.get('apollo', '')
-    if not apollo_key:
-        st.warning("Apollo.io API key not set. Please add it in the sidebar settings.")
-        return df
-    
-    # Company filtering options
-    with st.expander("Filtering Options", expanded=False):
-        skip_enriched = st.checkbox("Skip already enriched companies", True, key="apollo_skip_enriched")
-    
-    # Start enrichment button
-    if st.button("Start Apollo.io Enrichment", key="start_apollo", 
-                disabled=st.session_state.processing_status['is_processing']):
-        # Set up progress tracking
-        progress_tracker = create_progress_tracker()
-        
-        # Update processing status
-        st.session_state.processing_status['is_processing'] = True
-        st.session_state.processing_status['current_operation'] = "Apollo.io Enrichment"
-        
-        # Perform enrichment
-        try:
-            enriched_df = perform_apollo_enrichment(
-                df,
-                progress_tracker,
-                skip_enriched=skip_enriched
-            )
-            
-            if not should_stop_processing():
-                st.success("Apollo.io enrichment completed!")
-                # Update the dataframe
-                df = enriched_df
-            else:
-                st.warning("Enrichment was stopped by user.")
-        except Exception as e:
-            st.error(f"Error during Apollo.io enrichment: {str(e)}")
-        finally:
-            # Reset processing status
-            st.session_state.processing_status['is_processing'] = False
-    
-    return df
-
-def render_crunchbase_tab(df):
-    """Render the Crunchbase API enrichment tab."""
-    st.write("#### Crunchbase API Enrichment")
-    st.write("Enrich company data using the Crunchbase API.")
-    
-    # Check if API key is set
-    crunchbase_key = st.session_state.api_keys.get('crunchbase', '')
-    if not crunchbase_key:
-        st.warning("Crunchbase API key not set. Please add it in the sidebar settings.")
-        return df
-    
-    # Company filtering options
-    with st.expander("Filtering Options", expanded=False):
-        skip_enriched = st.checkbox("Skip already enriched companies", True, key="crunchbase_skip_enriched")
-    
-    # Start enrichment button
-    if st.button("Start Crunchbase Enrichment", key="start_crunchbase", 
-                disabled=st.session_state.processing_status['is_processing']):
-        # Set up progress tracking
-        progress_tracker = create_progress_tracker()
-        
-        # Update processing status
-        st.session_state.processing_status['is_processing'] = True
-        st.session_state.processing_status['current_operation'] = "Crunchbase Enrichment"
-        
-        # Perform enrichment
-        try:
-            enriched_df = perform_crunchbase_enrichment(
-                df,
-                progress_tracker,
-                skip_enriched=skip_enriched
-            )
-            
-            if not should_stop_processing():
-                st.success("Crunchbase enrichment completed!")
-                # Update the dataframe
-                df = enriched_df
-            else:
-                st.warning("Enrichment was stopped by user.")
-        except Exception as e:
-            st.error(f"Error during Crunchbase enrichment: {str(e)}")
-        finally:
-            # Reset processing status
-            st.session_state.processing_status['is_processing'] = False
-    
-    return df
-
-def render_web_scraping_tab(df):
-    """Render the web scraping enrichment tab."""
-    st.write("#### Web Scraping Enrichment")
-    st.write("Enrich company data by scraping company websites.")
-    
-    # Scraping options
-    with st.expander("Scraping Options", expanded=False):
-        skip_enriched = st.checkbox("Skip already enriched companies", True, key="scraping_skip_enriched")
-        extract_social = st.checkbox("Extract social media links", True, key="scraping_extract_social")
-        extract_description = st.checkbox("Extract company description", True, key="scraping_extract_description")
-        extract_contacts = st.checkbox("Extract contact information", True, key="scraping_extract_contacts")
-    
-    # Start enrichment button
-    if st.button("Start Web Scraping", key="start_scraping", 
-                disabled=st.session_state.processing_status['is_processing']):
-        # Set up progress tracking
-        progress_tracker = create_progress_tracker()
-        
-        # Update processing status
-        st.session_state.processing_status['is_processing'] = True
-        st.session_state.processing_status['current_operation'] = "Web Scraping"
-        
-        # Perform enrichment
-        try:
-            scraping_options = {
-                "skip_enriched": skip_enriched,
-                "extract_social": extract_social,
-                "extract_description": extract_description,
-                "extract_contacts": extract_contacts
+            # Calculate statistics
+            stats = {
+                'total': len(df),
+                'complete': (df['EnrichmentStatus'] == 'Complete').sum(),
+                'partial': (df['EnrichmentStatus'] == 'Partial').sum(),
+                'failed': (df['EnrichmentStatus'] == 'Failed').sum() + (df['EnrichmentStatus'] == 'Incomplete').sum(),
+                'pending': (df['EnrichmentStatus'] == 'Pending').sum()
             }
             
-            enriched_df = perform_web_scraping(
-                df,
-                progress_tracker,
-                options=scraping_options
-            )
-            
-            if not should_stop_processing():
-                st.success("Web scraping completed!")
-                # Update the dataframe
-                df = enriched_df
+            # Calculate success rate
+            if stats['total'] > 0:
+                stats['success_rate'] = round(((stats['complete'] + stats['partial']) / stats['total'] * 100), 1)
             else:
-                st.warning("Web scraping was stopped by user.")
-        except Exception as e:
-            st.error(f"Error during web scraping: {str(e)}")
-        finally:
-            # Reset processing status
-            st.session_state.processing_status['is_processing'] = False
-    
-    return df
-
-def render_results_tab(df):
-    """Render the results display tab."""
-    st.subheader("Enrichment Results")
-    
-    if df is None or len(df) == 0:
-        st.warning("No data available to display results.")
-        return
-    
-    # Create tabs for different result views
-    results_tabs = st.tabs(["Statistics", "Technology Info", "Sample Data", "Full Data"])
-    
-    # Tab 1: Statistics
-    with results_tabs[0]:
-        col1, col2 = st.columns(2)
-        with col1:
-            display_enrichment_statistics(df)
-        with col2:
-            display_enrichment_sources(df)
-    
-    # Tab 2: Technology Info
-    with results_tabs[1]:
-        col1, col2 = st.columns(2)
-        with col1:
-            display_tech_leadership_info(df)
-        with col2:
-            display_tech_stack_info(df)
-    
-    # Tab 3: Sample Data
-    with results_tabs[2]:
-        display_sample_companies(df, max_samples=5)
-    
-    # Tab 4: Full Data
-    with results_tabs[3]:
-        display_full_data_table(df)
-
-def render_salesforce_tab(df):
-    """Render the Salesforce export tab."""
-    st.subheader("Export to Salesforce")
-    
-    # Check if data exists and has been enriched
-    if df is None or len(df) == 0:
-        st.warning("No data available for export to Salesforce.")
-        return
-    
-    # Check if any companies have been enriched
-    enriched_count = len(df[df['enrichment_status'] == 'Completed'])
-    if enriched_count == 0:
-        st.warning("No enriched companies found. Please enrich data before exporting to Salesforce.")
-        return
-    
-    # Check if Salesforce credentials are set
-    sf_creds = st.session_state.api_keys.get('salesforce', {})
-    if not sf_creds.get('username') or not sf_creds.get('password'):
-        st.warning("Salesforce credentials not set. Please add them in the sidebar settings.")
-        return
-    
-    # Display enriched data summary
-    st.write(f"Ready to export {enriched_count} enriched companies to Salesforce.")
-    
-    # Export options
-    with st.expander("Export Options", expanded=True):
-        # Lead options
-        st.write("#### Lead Options")
-        
-        # Lead Status
-        lead_status = st.selectbox(
-            "Lead Status:",
-            ["Open - Not Contacted", "Working - Contacted", "Closed - Converted", "Closed - Not Converted"],
-            index=0
-        )
-        
-        # Lead Source
-        lead_source = st.selectbox(
-            "Lead Source:",
-            ["Web", "Phone Inquiry", "Partner Referral", "Purchased List", "Other"],
-            index=0
-        )
-        
-        # Company selection
-        st.write("#### Company Selection")
-        
-        # Filter options
-        filter_option = st.radio(
-            "Export:",
-            ["All enriched companies", "Selected companies"],
-            index=0
-        )
-        
-        selected_companies = []
-        if filter_option == "Selected companies":
-            # Allow selection of specific companies
-            company_options = df[df['enrichment_status'] == 'Completed']['company'].tolist()
-            selected_companies = st.multiselect(
-                "Select companies to export:",
-                company_options,
-                default=company_options[:min(5, len(company_options))]
+                stats['success_rate'] = 0
+            
+            # Display statistics
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Total Records", stats['total'])
+            col2.metric("Complete", stats['complete'])
+            col3.metric("Partial", stats['partial'])
+            col4.metric("Success Rate", f"{stats['success_rate']}%")
+            
+            # Display the enriched data
+            st.subheader("Enriched Data")
+            
+            # Add filtering options
+            filter_options = st.multiselect(
+                "Filter by Enrichment Status",
+                options=["Complete", "Partial", "Failed", "Pending"],
+                default=["Complete", "Partial"]
+            )
+            
+            # Apply filters
+            if filter_options:
+                filtered_df = df[df['EnrichmentStatus'].isin(filter_options)]
+            else:
+                filtered_df = df
+            
+            # Display the filtered data
+            st.dataframe(filtered_df)
+            
+            # Add download button
+            csv_data = filtered_df.to_csv(index=False)
+            st.download_button(
+                label="Download Filtered Data as CSV",
+                data=csv_data,
+                file_name="enriched_company_data.csv",
+                mime="text/csv"
             )
     
-    # Start export button
-    if st.button("Export to Salesforce", key="start_export", 
-                disabled=st.session_state.processing_status['is_processing']):
-        # Set up progress tracking
-        progress_tracker = create_progress_tracker()
+    # Export to Salesforce Tab
+    with result_export_tabs[1]:
+        st.subheader("Export to Salesforce")
         
-        # Update processing status
-        st.session_state.processing_status['is_processing'] = True
-        st.session_state.processing_status['current_operation'] = "Salesforce Export"
-        
-        # Get filtered dataframe for export
-        if filter_option == "All enriched companies":
-            export_df = df[df['enrichment_status'] == 'Completed'].copy()
+        # Check if Salesforce credentials are available
+        sf_creds = st.session_state.api_keys.get('salesforce', {})
+        if not sf_creds.get('username') or not sf_creds.get('password'):
+            st.warning("Salesforce credentials not found. Please add them in the sidebar.")
         else:
-            if not selected_companies:
-                st.warning("No companies selected for export.")
-                st.session_state.processing_status['is_processing'] = False
-                return
-            export_df = df[df['company'].isin(selected_companies)].copy()
-        
-        # Initialize Salesforce service
-        sf_service = SalesforceService(
-            username=sf_creds.get('username', ''),
-            password=sf_creds.get('password', ''),
-            security_token=sf_creds.get('security_token', ''),
-            domain=sf_creds.get('domain', 'login')
-        )
-        
-        # Perform export
-        try:
-            # Connect to Salesforce
-            if not sf_service.connect():
-                st.error("Failed to connect to Salesforce. Please check your credentials.")
-                st.session_state.processing_status['is_processing'] = False
-                return
+            # UI for Salesforce export
+            st.markdown("""
+            Select the records you want to export to Salesforce and configure the mapping options.
+            """)
             
-            # Reset export results
-            st.session_state.export_results = {'success': [], 'failures': []}
+            # Export options
+            export_status = st.multiselect(
+                "Export records with status",
+                options=["Complete", "Partial", "Failed", "Pending"],
+                default=["Complete", "Partial"]
+            )
             
-            # Export each company
-            total = len(export_df)
-            success_count = 0
-            failure_count = 0
+            # Export button
+            export_to_sf = st.button("Export to Salesforce", type="primary")
             
-            for i, (idx, row) in enumerate(export_df.iterrows()):
-                # Check if process should stop
-                if should_stop_processing():
-                    st.warning("Export was stopped by user.")
-                    break
-                
-                try:
-                    # Prepare lead data
-                    lead_data = {
-                        'Company': row.get('company', ''),
-                        'Website': row.get('website', ''),
-                        'Description': row.get('company_description', ''),
-                        'Industry': row.get('industry', ''),
-                        'Status': lead_status,
-                        'LeadSource': lead_source
-                    }
-                    
-                    # Add contact info if available
-                    if 'contact_name' in row and row['contact_name']:
-                        name_parts = row['contact_name'].split(' ', 1)
-                        if len(name_parts) > 1:
-                            lead_data['FirstName'] = name_parts[0]
-                            lead_data['LastName'] = name_parts[1]
-                        else:
-                            lead_data['FirstName'] = ''
-                            lead_data['LastName'] = name_parts[0]
+            if export_to_sf:
+                with st.spinner("Exporting to Salesforce..."):
+                    # Filter records based on selected statuses
+                    if export_status:
+                        export_df = df[df['EnrichmentStatus'].isin(export_status)]
                     else:
-                        lead_data['FirstName'] = ''
-                        lead_data['LastName'] = f"{row.get('company', 'Unknown')} Contact"
+                        export_df = df
                     
-                    if 'email' in row and row['email']:
-                        lead_data['Email'] = row['email']
-                    
-                    if 'phone' in row and row['phone']:
-                        lead_data['Phone'] = row['phone']
-                    
-                    # Create the lead
-                    lead_id = sf_service.create_lead(lead_data)
-                    
-                    if lead_id:
-                        # Store successful result
-                        st.session_state.export_results['success'].append({
-                            'company': row.get('company', ''),
-                            'lead_id': lead_id
-                        })
-                        success_count += 1
-                    else:
-                        # Store failure result
-                        st.session_state.export_results['failures'].append({
-                            'company': row.get('company', ''),
-                            'error': 'Failed to create lead'
-                        })
-                        failure_count += 1
-                
-                except Exception as e:
-                    # Store failure result
-                    st.session_state.export_results['failures'].append({
-                        'company': row.get('company', ''),
-                        'error': str(e)
-                    })
-                    failure_count += 1
-                
-                # Update progress
-                progress = (i + 1) / total
-                progress_tracker.update_progress(progress, i + 1, total, success_count)
-                
-                # Add a small delay to avoid overloading Salesforce API
-                time.sleep(0.5)
-            
-            # Display final results
-            if success_count > 0:
-                st.success(f"Successfully exported {success_count} leads to Salesforce.")
-            
-            if failure_count > 0:
-                st.error(f"Failed to export {failure_count} leads. See error details below.")
-                for failure in st.session_state.export_results['failures']:
-                    st.write(f"- {failure['company']}: {failure['error']}")
-            
-            # Disconnect from Salesforce
-            sf_service.disconnect()
-            
-        except Exception as e:
-            st.error(f"Error during Salesforce export: {str(e)}")
-        finally:
-            # Reset processing status
-            st.session_state.processing_status['is_processing'] = False 
+                    # Perform Salesforce export (simplified)
+                    try:
+                        # Initialize Salesforce service
+                        sf_service = SalesforceService(
+                            username=sf_creds.get('username'),
+                            password=sf_creds.get('password'),
+                            security_token=sf_creds.get('security_token', ''),
+                            domain=sf_creds.get('domain', 'login')
+                        )
+                        
+                        # Placeholder for export logic
+                        st.warning("Salesforce export is not implemented in this simplified version.")
+                        st.info(f"Would export {len(export_df)} records to Salesforce.")
+                    except Exception as e:
+                        st.error(f"Error during Salesforce export: {str(e)}")
+

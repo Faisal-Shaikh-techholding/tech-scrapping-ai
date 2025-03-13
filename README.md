@@ -1,3 +1,78 @@
+# Tech Scraping AI
+
+A streamlined application for company data enrichment using AI technology.
+
+## Setup Instructions
+
+### 1. Environment Setup
+
+1. Clone this repository:
+   ```
+   git clone <repository-url>
+   cd tech-scrapping-ai
+   ```
+
+2. Create and activate a virtual environment:
+   ```
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows, use: .venv\Scripts\activate
+   ```
+
+3. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+### 2. AWS Credentials Configuration
+
+The application uses AWS Bedrock to access Claude AI models. You need to set up your AWS credentials:
+
+1. Copy the `.env.example` file to `.env`:
+   ```
+   cp .env .env.example
+   ```
+
+2. Edit the `.env` file with your AWS credentials:
+   ```
+   AWS_ACCESS_KEY_ID=your_aws_access_key_here
+   AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here
+   AWS_REGION=us-east-1  # Or your preferred AWS region
+   ```
+
+3. Make sure your AWS account has access to Amazon Bedrock service and the Claude models you want to use.
+
+### 3. Running the Application
+
+Start the Streamlit application:
+```
+streamlit run app/main.py
+```
+
+## Features
+
+- **AI-Powered Enrichment**: Automatically process company data using Claude AI
+- **Smart Column Mapping**: Automatically identify column meanings regardless of names
+- **Data Standardization**: Convert raw data into a consistent format
+- **Salesforce Integration**: Export enriched data to Salesforce
+
+## Usage
+
+1. **Upload Data**: Upload your CSV or Excel file with company data
+2. **Preview Data**: Review your uploaded data
+3. **AI Enrichment**: Use Claude AI to enrich your data
+4. **Export Results**: Download enriched data or export to Salesforce
+
+## AWS Bedrock Setup
+
+To use the AI enrichment feature, you need:
+
+1. An AWS account with Bedrock access
+2. Permission to use Claude models in your region
+3. AWS Access Key and Secret that have permissions for Bedrock
+
+For more information on setting up AWS Bedrock, visit:
+https://docs.aws.amazon.com/bedrock/
+
 # AI-Powered CSV Processor for Company Data
 
 This application allows users to upload CSV files with company information, enrich the data using multiple services, and submit it to Salesforce CRM.

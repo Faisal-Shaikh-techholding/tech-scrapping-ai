@@ -56,45 +56,75 @@ class WebScraperService:
         """Get a random user agent string to avoid detection."""
         return random.choice(self.USER_AGENTS)
     
-    def _clean_url(self, url: str) -> str:
+    def _clean_url(self, url) -> str:
         """
         Clean and normalize a URL.
         
         Args:
-            url (str): URL to clean
+            url: URL to clean (could be string, float, or other type)
             
         Returns:
             str: Cleaned URL
         """
+        # Convert URL to string if it's not already
+        if not isinstance(url, str):
+            try:
+                url = str(url)
+                # Remove any decimal points and trailing zeros if it was a number
+                if '.' in url:
+                    url = url.rstrip('0').rstrip('.') if '.' in url else url
+            except Exception as e:
+                print(f"Error converting URL to string: {e}")
+                return ""
+                
+        # Skip processing if URL is empty
+        if not url:
+            return ""
+        
         # Add http:// if missing
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         
         # Parse the URL
-        parsed = urlparse(url)
-        
-        # Extract the domain
-        domain = parsed.netloc
-        
-        # Remove www. if present
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        
-        # Return the base URL
-        return f"https://{domain}"
+        try:
+            parsed = urlparse(url)
+            
+            # Extract the domain
+            domain = parsed.netloc
+            
+            # Remove www. if present
+            if domain.startswith('www.'):
+                domain = domain[4:]
+                
+            # Return the base URL
+            return f"https://{domain}"
+        except Exception as e:
+            print(f"Error parsing URL {url}: {e}")
+            return url
     
-    def fetch_page(self, url: str) -> Tuple[bool, Optional[BeautifulSoup], str]:
+    def fetch_page(self, url) -> Tuple[bool, Optional[BeautifulSoup], str]:
         """
         Fetch a web page and return BeautifulSoup object.
         
         Args:
-            url (str): URL to fetch
+            url: URL to fetch (can be string or other type)
             
         Returns:
             Tuple[bool, Optional[BeautifulSoup], str]: Success status, soup object, and error message
         """
+        # Handle non-string URLs
+        if not isinstance(url, str):
+            try:
+                url = str(url)
+            except Exception as e:
+                return False, None, f"Invalid URL type: {type(url).__name__} - {str(e)}"
+        
         # Clean the URL
         url = self._clean_url(url)
+        
+        # Check if URL is valid after cleaning
+        if not url:
+            return False, None, "Empty or invalid URL after cleaning"
         
         # Apply rate limiting
         self._rate_limit()
@@ -367,6 +397,20 @@ class WebScraperService:
         
         # Get the company website URL
         website = company_data.get('CompanyWebsite', '')
+        
+        # Convert numeric website to string if needed
+        if not isinstance(website, str):
+            try:
+                if pd.isna(website) or website is None:
+                    website = ''
+                else:
+                    website = str(website)
+                    # Clean it in case it's a number with decimal point
+                    if '.' in website:
+                        website = website.rstrip('0').rstrip('.')
+            except Exception as e:
+                print(f"Error converting website to string: {e}")
+                website = ''
         
         # Skip if no website
         if not website:

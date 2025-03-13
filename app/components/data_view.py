@@ -3,7 +3,7 @@
 """
 Data View Component
 
-This module handles the basic viewing of data before enrichment.
+This module handles the simple viewing of data before AI enrichment.
 """
 
 import streamlit as st
@@ -11,8 +11,8 @@ import pandas as pd
 from app.utils.session_state import go_to_step
 
 def render_data_view():
-    """Render the data view interface."""
-    st.header("Step 2: View Data")
+    """Render the simplified data view interface."""
+    st.header("Step 2: Preview Your Data")
     
     # Check if data exists
     if st.session_state.data is None:
@@ -26,6 +26,9 @@ def render_data_view():
     # Get the data
     df = st.session_state.data.copy()
     
+    # Display info message about AI processing
+    st.info("👁️ This is a preview of your raw data. In the next step, our AI will automatically analyze, map, and enrich it.")
+    
     # Render data table
     render_data_table(df)
     
@@ -37,18 +40,16 @@ def render_data_view():
             st.rerun()
     
     with col3:
-        if st.button("Continue to Enrich & Export", key="continue_to_enrich"):
-            # Update session state with data
-            st.session_state.data = df
+        if st.button("Continue to AI Enrichment", key="continue_to_enrich", type="primary"):
             go_to_step("enrich_export")
             st.rerun()
 
 def render_data_table(df):
     """Render the data table view with filtering options."""
-    st.subheader("Company Data")
+    st.subheader("Raw Data Preview")
     
     # Add search functionality
-    search_term = st.text_input("Search companies:", "")
+    search_term = st.text_input("Search:", "")
     
     # Filter data based on search term if provided
     if search_term:
@@ -57,23 +58,11 @@ def render_data_table(df):
     else:
         filtered_df = df
     
-    # Column selector
+    # Show row count
+    st.write(f"Showing {len(filtered_df)} rows of {len(df)} total records")
+    
+    # Display data
     if not filtered_df.empty:
-        all_columns = filtered_df.columns.tolist()
-        selected_columns = st.multiselect(
-            "Select columns to display:",
-            all_columns,
-            default=all_columns[:min(8, len(all_columns))]  # Display first 8 columns by default
-        )
-        
-        if selected_columns:
-            # Display data with selected columns
-            st.dataframe(
-                filtered_df[selected_columns], 
-                height=500,  # Increased height for better visibility
-                use_container_width=True
-            )
-        else:
-            st.info("Please select at least one column to display.")
+        st.dataframe(filtered_df, height=500, use_container_width=True)
     else:
         st.warning("No data matches your search criteria.") 

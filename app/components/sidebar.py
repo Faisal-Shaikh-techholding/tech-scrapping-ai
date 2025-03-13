@@ -160,7 +160,7 @@ def render_sidebar():
         - Enrich data with Apollo.io API, Crunchbase, and web scraping
         - Export enriched companies to Salesforce
         
-        **Need help?** Contact support@example.com
+        **Need help?** Contact support@techholding.com
         """)
     
     # Reset button
