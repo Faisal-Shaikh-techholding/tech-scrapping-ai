@@ -1,3 +1,4 @@
+# pylint: disable=trailing-whitespace
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -7,23 +8,18 @@ This module renders the sidebar for navigation and configuration.
 """
 
 import streamlit as st
-import logging
 from app.utils.session_state import go_to_step, reset_session_state
-
-logger = logging.getLogger('csv_processor')
 
 def render_sidebar():
     """Render the sidebar for navigation and configuration."""
     
     st.sidebar.title("Process Steps")
     
-    # Define the steps in the workflow
+    # Define the steps in the simplified workflow
     steps = [
-        ("upload", "1. Upload CSV", "📤"),
-        ("preview", "2. Data Preview", "👁️"),
-        ("enrich", "3. Data Enrichment", "🔍"),
-        ("edit", "4. Review & Edit", "✏️"),
-        ("export", "5. Salesforce Export", "🚀")
+        ("upload", "1. Upload Data", "📤"),
+        ("view", "2. View Data", "👁️"),
+        ("enrich_export", "3. Enrich & Export", "🚀")
     ]
     
     # Navigation buttons
@@ -63,56 +59,31 @@ def render_sidebar():
     # API Configuration section
     st.sidebar.subheader("API Configuration")
     
-    # Initialize API keys in session state if they don't exist
+    # Ensure api_keys has the correct structure
     if 'api_keys' not in st.session_state:
         st.session_state.api_keys = {
-            'apollo': {},
-            'salesforce': {},
-            'crunchbase': {}
+            'apollo': '',
+            'crunchbase': '',
+            'salesforce': {
+                'username': '',
+                'password': '',
+                'security_token': '',
+                'domain': 'login'
+            }
         }
-    
-    # Ensure api_keys has the correct structure
-    if not isinstance(st.session_state.api_keys, dict):
-        st.session_state.api_keys = {
-            'apollo': {},
-            'salesforce': {},
-            'crunchbase': {}
-        }
-    
-    # Ensure apollo is a dictionary
-    if 'apollo' not in st.session_state.api_keys:
-        st.session_state.api_keys['apollo'] = {}
-    elif not isinstance(st.session_state.api_keys['apollo'], dict):
-        # Convert old string format to new dictionary format
-        old_key = st.session_state.api_keys['apollo']
-        st.session_state.api_keys['apollo'] = {'api_key': old_key} if old_key else {}
-    
-    # Ensure salesforce is a dictionary
-    if 'salesforce' not in st.session_state.api_keys:
-        st.session_state.api_keys['salesforce'] = {}
-    elif not isinstance(st.session_state.api_keys['salesforce'], dict):
-        st.session_state.api_keys['salesforce'] = {}
-    
-    # Ensure crunchbase is a dictionary
-    if 'crunchbase' not in st.session_state.api_keys:
-        st.session_state.api_keys['crunchbase'] = {}
-    elif not isinstance(st.session_state.api_keys['crunchbase'], dict):
-        # Convert old string format to new dictionary format
-        old_key = st.session_state.api_keys['crunchbase']
-        st.session_state.api_keys['crunchbase'] = {'api_key': old_key} if old_key else {}
     
     # Apollo.io API key
     apollo_expander = st.sidebar.expander("Apollo.io API", expanded=False)
     with apollo_expander:
         apollo_key = st.text_input(
             "Apollo.io API Key",
-            value=st.session_state.api_keys['apollo'].get('api_key', ''),
+            value=st.session_state.api_keys.get('apollo', ''),
             type="password",
             key="apollo_api_key"
         )
         
         if apollo_key:
-            st.session_state.api_keys['apollo'] = {'api_key': apollo_key}
+            st.session_state.api_keys['apollo'] = apollo_key
             st.success("Apollo.io API key configured")
         else:
             st.info("Enter your Apollo.io API key to enable company data enrichment")
@@ -122,13 +93,13 @@ def render_sidebar():
     with crunchbase_expander:
         crunchbase_key = st.text_input(
             "Crunchbase API Key",
-            value=st.session_state.api_keys['crunchbase'].get('api_key', ''),
+            value=st.session_state.api_keys.get('crunchbase', ''),
             type="password",
             key="crunchbase_api_key"
         )
         
         if crunchbase_key:
-            st.session_state.api_keys['crunchbase'] = {'api_key': crunchbase_key}
+            st.session_state.api_keys['crunchbase'] = crunchbase_key
             st.success("Crunchbase API key configured")
         else:
             st.info("Enter your Crunchbase API key to enable advanced company enrichment")
@@ -136,30 +107,32 @@ def render_sidebar():
     # Salesforce credentials
     sf_expander = st.sidebar.expander("Salesforce Credentials", expanded=False)
     with sf_expander:
+        sf_creds = st.session_state.api_keys.get('salesforce', {})
+        
         sf_username = st.text_input(
             "Salesforce Username",
-            value=st.session_state.api_keys['salesforce'].get('username', '')
+            value=sf_creds.get('username', '')
         )
         
         sf_password = st.text_input(
             "Salesforce Password",
-            value=st.session_state.api_keys['salesforce'].get('password', ''),
+            value=sf_creds.get('password', ''),
             type="password"
         )
         
         sf_token = st.text_input(
             "Salesforce Security Token",
-            value=st.session_state.api_keys['salesforce'].get('security_token', ''),
+            value=sf_creds.get('security_token', ''),
             type="password"
         )
         
         sf_domain = st.selectbox(
             "Salesforce Domain",
             options=["login", "test"],
-            index=0 if st.session_state.api_keys['salesforce'].get('domain', 'login') == "login" else 1
+            index=0 if sf_creds.get('domain', 'login') == "login" else 1
         )
         
-        if sf_username and sf_password and sf_token:
+        if sf_username and sf_password:
             st.session_state.api_keys['salesforce'] = {
                 'username': sf_username,
                 'password': sf_password,
@@ -182,10 +155,10 @@ def render_sidebar():
         and submit it to Salesforce CRM.
         
         **Features:**
-        - Upload and process CSV files with company data
-        - Enrich data with Apollo.io API and web scraping
-        - Review and edit data before submission
-        - Export selected companies to Salesforce
+        - Upload and process CSV/Excel files with company data
+        - View, analyze, and clean your data before enrichment
+        - Enrich data with Apollo.io API, Crunchbase, and web scraping
+        - Export enriched companies to Salesforce
         
         **Need help?** Contact support@example.com
         """)
@@ -196,7 +169,6 @@ def render_sidebar():
         # Confirm reset
         reset_confirmed = st.sidebar.checkbox("Confirm reset (this will clear all data)", key="reset_confirm")
         if reset_confirmed:
-            from app.utils.session_state import reset_session_state
             reset_session_state()
             st.rerun()
 
@@ -213,7 +185,7 @@ def _can_navigate_to(step):
     current_step = st.session_state.current_step
     
     # Allow navigation back to any previous step
-    step_order = ["upload", "preview", "enrich", "edit", "export"]
+    step_order = ["upload", "view", "enrich_export"]
     current_idx = step_order.index(current_step)
     target_idx = step_order.index(step)
     
@@ -222,14 +194,10 @@ def _can_navigate_to(step):
         return True
     
     # For forward navigation, check if we have the required data
-    if step == "preview":
-        return st.session_state.raw_data is not None
-    elif step == "enrich":
-        return st.session_state.processed_data is not None
-    elif step == "edit":
-        return st.session_state.enriched_data is not None
-    elif step == "export":
-        return st.session_state.final_data is not None
+    if step == "view":
+        return st.session_state.data is not None
+    elif step == "enrich_export":
+        return st.session_state.data is not None
     
     # Default: allow navigation
     return True 

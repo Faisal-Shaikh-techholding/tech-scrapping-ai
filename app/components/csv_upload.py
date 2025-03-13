@@ -9,20 +9,17 @@ This module renders the CSV upload interface and handles CSV parsing.
 import streamlit as st
 import pandas as pd
 import io
-import logging
+import numpy as np
 from typing import Tuple
 from app.utils.session_state import go_to_step
-from app.utils.data_processing import validate_csv_data, extract_names_companies, clean_data
-
-logger = logging.getLogger('csv_processor')
 
 def render_csv_upload():
     """Render the CSV upload interface."""
     
-    st.header("Upload CSV File")
+    st.header("Step 1: Upload Data File")
     
     st.markdown("""
-    Upload a CSV file containing lead data. The system will analyze the file
+    Upload a CSV or Excel file containing company data. The system will analyze the file
     and extract relevant information for further processing.
     
     **Supported formats:**
@@ -30,17 +27,12 @@ def render_csv_upload():
     - Excel files (.xlsx, .xls)
     
     **Required information:**
-    - Names (first name, last name, or full name)
-    - Company information
+    - Company names
+    - Website URLs (optional but recommended for enrichment)
     """)
     
     # File uploader
     uploaded_file = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls"])
-    
-    # Show sample data option
-    if st.checkbox("Use sample data instead", key="use_sample_data"):
-        uploaded_file = _get_sample_data()
-        st.success("Using sample data. You can proceed with processing.")
     
     # Process the uploaded file
     if uploaded_file is not None:
@@ -53,7 +45,7 @@ def render_csv_upload():
                     return
                 
                 # Display basic file info
-                st.info(f"File loaded successfully: {len(df)} rows, {len(df.columns)} columns")
+                st.success(f"Upload successful! Found {len(df)} rows and {len(df.columns)} columns.")
                 
                 # Preview raw data
                 with st.expander("Preview Raw Data"):
@@ -63,59 +55,52 @@ def render_csv_upload():
                 with st.spinner("Validating data..."):
                     is_valid, messages = validate_csv_data(df)
                 
-                # Display validation messages
+                # Only show error messages
                 for message in messages:
-                    if not is_valid:
+                    if not is_valid and message.startswith("Error:"):
                         st.error(message)
-                    else:
-                        st.success(message)
                 
                 # Processing button
                 if is_valid:
                     if st.button("Process Data", key="process_data_btn"):
                         with st.spinner("Processing data..."):
-                            # Store raw data in session state
-                            st.session_state.raw_data = df
-                            
                             # Extract and clean data
-                            processed_df = extract_names_companies(df)
-                            processed_df = clean_data(processed_df)
+                            processed_df = clean_data(df)
                             
-                            # Store processed data
-                            st.session_state.processed_data = processed_df
+                            # Store processed data in single data variable
+                            st.session_state.data = processed_df
                             
-                            # Log processing
-                            logger.info("CSV processed successfully: %d rows after processing", len(processed_df))
+                            print("Data processed successfully")
                             
-                            # Navigate to preview step
-                            go_to_step("preview")
+                            # Navigate to view step
+                            go_to_step("view")
                             st.rerun()
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
-            logger.error("Error processing uploaded file: %s", str(e), exc_info=True)
+            print(f"Error processing uploaded file: {str(e)}")
     else:
         # Show instructions when no file is uploaded
-        st.info("Please upload a CSV file to continue.")
+        st.info("Please upload a CSV or Excel file to continue.")
         
         # Display file format information
         with st.expander("File Format Information"):
             st.markdown("""
-            ### Expected CSV format
+            ### Expected file format
             
-            Your CSV file should contain columns with information about leads.
+            Your file should contain columns with information about companies.
             The system will try to automatically identify the following information:
             
-            - **Name**: First name and last name (separate columns or full name)
             - **Company**: Company or organization name
-            - **Email**: Email addresses (optional)
-            - **Phone**: Phone numbers (optional)
+            - **Website**: Company website URL
+            - **Industry**: Industry or sector (optional)
+            - **Description**: Company description (optional)
             
-            #### Example CSV format:
+            #### Example format:
             
-            | First Name | Last Name | Company | Email | Phone |
-            |------------|-----------|---------|-------|-------|
-            | John | Doe | Acme Inc. | john.doe@acme.com | 555-123-4567 |
-            | Jane | Smith | XYZ Corp | jane.smith@xyz.com | 555-987-6543 |
+            | Company | Website | Industry | Description |
+            |---------|---------|----------|-------------|
+            | Acme Inc. | acme.com | Manufacturing | A leading manufacturer of... |
+            | XYZ Corp | xyz.com | Technology | Technology solutions provider... |
             
             The system is flexible and can work with different column names and formats.
             """)
@@ -161,36 +146,103 @@ def _read_file(file) -> Tuple[pd.DataFrame, str]:
             
     except Exception as e:
         error_message = f"Error reading file: {str(e)}"
-        logger.error("Error reading uploaded file: %s", str(e), exc_info=True)
+        print(f"Error reading uploaded file: {str(e)}")
     
     return df, error_message
 
-def _get_sample_data() -> io.BytesIO:
+def validate_csv_data(df) -> Tuple[bool, list]:
     """
-    Generate sample data for demonstration purposes.
+    Validate the CSV data to ensure it contains the required columns.
     
+    Args:
+        df (pd.DataFrame): DataFrame to validate
+        
     Returns:
-        io.BytesIO: In-memory file-like object containing sample CSV data
+        Tuple[bool, list]: Validation result and list of messages
     """
-    # Create sample DataFrame
-    sample_data = {
-        'First Name': ['John', 'Jane', 'Robert', 'Emily', 'Michael'],
-        'Last Name': ['Doe', 'Smith', 'Johnson', 'Brown', 'Davis'],
-        'Company': ['Acme Inc.', 'XYZ Corp', 'ABC Enterprises', 'Tech Solutions', 'Global Systems'],
-        'Email': ['john.doe@acme.com', 'jane.smith@xyz.com', 'robert@abc.com', 'emily.brown@techsolutions.com', 'michael.davis@global.com'],
-        'Phone': ['555-123-4567', '555-987-6543', '555-456-7890', '555-789-0123', '555-345-6789']
+    messages = []
+    is_valid = True
+    
+    # Check for minimum required columns
+    if len(df.columns) < 1:
+        is_valid = False
+        messages.append("Error: The file must contain at least one column.")
+    
+    # Try to identify company column
+    company_columns = [col for col in df.columns if any(kw in col.lower() for kw in 
+                      ['company', 'organization', 'org', 'business', 'name'])]
+    
+    if not company_columns:
+        messages.append("Error: Could not identify a company name column. Please ensure your data includes company information.")
+        is_valid = is_valid and False
+    
+    # Check for website column
+    website_columns = [col for col in df.columns if any(kw in col.lower() for kw in 
+                      ['website', 'url', 'domain', 'site', 'web'])]
+    
+    if not website_columns:
+        messages.append("Warning: Website column not found. Website URLs are recommended for enrichment.")
+    
+    return is_valid, messages
+
+def clean_data(df) -> pd.DataFrame:
+    """
+    Clean and standardize the data.
+    
+    Args:
+        df (pd.DataFrame): Raw DataFrame
+        
+    Returns:
+        pd.DataFrame: Cleaned DataFrame
+    """
+    # Make a copy to avoid modifying the original
+    cleaned_df = df.copy()
+    
+    # Convert all column names to lowercase
+    cleaned_df.columns = [col.lower().strip() for col in cleaned_df.columns]
+    
+    # Map common column names to standard names
+    column_mapping = {
+        'name': 'company',
+        'company name': 'company',
+        'organization': 'company',
+        'business': 'company',
+        'url': 'website',
+        'website url': 'website',
+        'domain': 'website',
+        'homepage': 'website',
+        'description': 'company_description',
+        'about': 'company_description',
+        'company description': 'company_description'
     }
     
-    df = pd.DataFrame(sample_data)
+    # Rename columns if they match our mapping
+    for old_name, new_name in column_mapping.items():
+        if old_name in cleaned_df.columns and new_name not in cleaned_df.columns:
+            cleaned_df = cleaned_df.rename(columns={old_name: new_name})
     
-    # Convert to CSV in memory
-    csv_buffer = io.BytesIO()
-    df.to_csv(csv_buffer, index=False)
-    csv_buffer.seek(0)
+    # Ensure company column exists
+    if 'company' not in cleaned_df.columns:
+        if len(cleaned_df.columns) > 0:
+            # Use the first column as company name if not identified
+            cleaned_df = cleaned_df.rename(columns={cleaned_df.columns[0]: 'company'})
+            print(f"No company column identified. Using {cleaned_df.columns[0]} as company names.")
     
-    # Create a BytesIO object that streamlit can use as a file
-    output = io.BytesIO(csv_buffer.read())
-    output.name = "sample_leads.csv"
-    output.seek(0)
+    # Ensure website column exists
+    if 'website' not in cleaned_df.columns:
+        cleaned_df['website'] = ''
     
-    return output 
+    # Add enrichment status column
+    cleaned_df['enrichment_status'] = 'Pending'
+    
+    # Clean data
+    cleaned_df = cleaned_df.replace('', np.nan)
+    
+    # Drop rows where company is NaN
+    if 'company' in cleaned_df.columns:
+        cleaned_df = cleaned_df.dropna(subset=['company'])
+    
+    # Reset index
+    cleaned_df = cleaned_df.reset_index(drop=True)
+    
+    return cleaned_df 

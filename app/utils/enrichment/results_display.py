@@ -21,10 +21,10 @@ def display_enrichment_statistics(df):
     print("Displaying enrichment statistics.")
     
     # Calculate statistics
-    success_count = (df['EnrichmentStatus'] == 'Success').sum()
-    pending_count = (df['EnrichmentStatus'] == 'Pending').sum()
-    failed_count = (df['EnrichmentStatus'] == 'Failed').sum()
-    cancelled_count = (df['EnrichmentStatus'] == 'Cancelled').sum()
+    success_count = (df['enrichment_status'] == 'Completed').sum()
+    pending_count = (df['enrichment_status'] == 'Pending').sum()
+    failed_count = (df['enrichment_status'] == 'Failed').sum()
+    cancelled_count = (df['enrichment_status'] == 'Cancelled').sum()
     
     # Display statistics
     col1, col2, col3 = st.columns(3)
@@ -47,20 +47,23 @@ def display_enrichment_sources(df):
     # Count companies by enrichment source
     source_counts = {}
     for _, row in df.iterrows():
-        source = row.get('EnrichmentSource', 'Unknown')
-        if source:
-            if isinstance(source, str):
-                source_counts[source] = source_counts.get(source, 0) + 1
+        source = row.get('enrichment_source', 'Unknown')
+        
+        if source != 'Unknown':
+            if source not in source_counts:
+                source_counts[source] = 0
+            source_counts[source] += 1
     
-    # Display source statistics
+    # Display as bar chart if we have sources
     if source_counts:
         source_df = pd.DataFrame({
             'Source': list(source_counts.keys()),
             'Count': list(source_counts.values())
         })
-        source_df = source_df.sort_values('Count', ascending=False)
         
         st.bar_chart(source_df.set_index('Source'))
+    else:
+        st.info("No enrichment source data available.")
 
 def display_enrichment_log():
     """Display the enrichment process log."""
@@ -83,7 +86,7 @@ def display_tech_leadership_info(df):
     # Count companies with tech leadership data
     has_tech_leadership = 0
     for _, row in df.iterrows():
-        if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+        if isinstance(row.get('tech_leadership'), list) and len(row.get('tech_leadership', [])) > 0:
             has_tech_leadership += 1
     
     st.metric("Companies with Tech Leadership Data", has_tech_leadership)
@@ -98,13 +101,14 @@ def display_tech_stack_info(df):
     st.subheader("Technology Stack Information")
     
     # Count companies with technology data
-    has_tech_data = (df['CompanyTechnology'].notna() & 
-                    (df['CompanyTechnology'] != '')).sum()
+    has_tech_data = 0
+    if 'tech_stack' in df.columns:
+        has_tech_data = (df['tech_stack'].notna() & (df['tech_stack'] != '')).sum()
     
     # Count companies with tech job listings
     has_job_listings = 0
     for _, row in df.iterrows():
-        if isinstance(row.get('TechJobListings'), list) and len(row.get('TechJobListings', [])) > 0:
+        if isinstance(row.get('tech_job_listings'), list) and len(row.get('tech_job_listings', [])) > 0:
             has_job_listings += 1
     
     col1, col2 = st.columns(2)
@@ -123,12 +127,14 @@ def display_company_size_funding(df):
     st.subheader("Company Size and Funding")
     
     # Count companies with size data
-    has_size_data = (df['CompanySize'].notna() & 
-                    (df['CompanySize'] != '')).sum()
+    has_size_data = 0
+    if 'company_size' in df.columns:
+        has_size_data = (df['company_size'].notna() & (df['company_size'] != '')).sum()
     
     # Count companies with funding data
-    has_funding_data = (df['CompanyFunding'].notna() & 
-                       (df['CompanyFunding'] != '')).sum()
+    has_funding_data = 0
+    if 'funding_amount' in df.columns:
+        has_funding_data = (df['funding_amount'].notna() & (df['funding_amount'] != '')).sum()
     
     col1, col2 = st.columns(2)
     with col1:
@@ -138,55 +144,56 @@ def display_company_size_funding(df):
 
 def display_sample_companies(df, max_samples=5):
     """
-    Display sample enriched companies.
+    Display a sample of enriched companies.
     
     Args:
         df: DataFrame containing enriched data
-        max_samples: Maximum number of samples to display
+        max_samples: Maximum number of companies to display
     """
-    st.subheader("Sample Enriched Data")
+    st.subheader("Sample Enriched Companies")
     
-    # Select a sample of companies with good enrichment
-    sample_companies = df[df['EnrichmentStatus'] == 'Success'].head(max_samples)
+    # Get successfully enriched companies
+    enriched_df = df[df['enrichment_status'] == 'Completed'].copy()
     
-    if not sample_companies.empty:
-        for idx, row in sample_companies.iterrows():
-            with st.expander(f"Company: {row.get('Company', 'Unknown')} (Source: {row.get('EnrichmentSource', 'Unknown')})"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write("**Basic Information**")
-                    st.write(f"**Industry:** {row.get('Industry', 'N/A')}")
-                    st.write(f"**Size:** {row.get('CompanySize', 'N/A')} employees")
-                    st.write(f"**Founded:** {row.get('CompanyFounded', 'N/A')}")
-                    st.write(f"**Location:** {row.get('CompanyLocation', 'N/A')}")
-                    
-                    if row.get('CompanyFunding'):
-                        st.write(f"**Total Funding:** {row.get('CompanyFunding', 'N/A')}")
-                        if row.get('CompanyLatestFundingDate'):
-                            st.write(f"**Latest Funding:** {row.get('CompanyLatestFundingStage', 'N/A')} on {row.get('CompanyLatestFundingDate', 'N/A')}")
-                
-                with col2:
-                    st.write("**Technology Information**")
-                    if row.get('CompanyTechnology'):
-                        st.write(f"**Tech Stack:** {row.get('CompanyTechnology', 'N/A')}")
-                    
-                    # Display tech leadership contacts if available
-                    tech_leaders = row.get('TechLeadership', [])
-                    if tech_leaders and len(tech_leaders) > 0:
-                        st.write("**Technology Leadership:**")
-                        for leader in tech_leaders:
-                            st.write(f"- **{leader.get('name', 'Unknown')}**, {leader.get('title', 'N/A')}")
-                            contact_info = []
-                            if leader.get('email'):
-                                contact_info.append(f"Email: {leader.get('email')}")
-                            if leader.get('phone'):
-                                contact_info.append(f"Phone: {leader.get('phone')}")
-                            if leader.get('linkedin'):
-                                contact_info.append(f"[LinkedIn Profile]({leader.get('linkedin')})")
-                            
-                            if contact_info:
-                                st.write("  " + " | ".join(contact_info))
+    if len(enriched_df) == 0:
+        st.info("No enriched companies to display.")
+        return
+    
+    # Take a sample
+    sample_df = enriched_df.sample(min(max_samples, len(enriched_df)))
+    
+    # Display each company
+    for i, (_, row) in enumerate(sample_df.iterrows(), 1):
+        company_name = row.get('company', f"Company {i}")
+        website = row.get('website', 'No website')
+        
+        with st.expander(f"{company_name} ({website})", expanded=i==1):
+            # Basic info
+            st.write("#### Basic Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Industry:** {row.get('industry', 'Unknown')}")
+                st.write(f"**Size:** {row.get('company_size', 'Unknown')}")
+                st.write(f"**Enrichment Source:** {row.get('enrichment_source', 'Unknown')}")
+            with col2:
+                st.write(f"**Founded:** {row.get('founded_year', 'Unknown')}")
+                st.write(f"**Location:** {row.get('location', 'Unknown')}")
+                st.write(f"**Funding:** {row.get('funding_amount', 'Unknown')}")
+            
+            # Technology info
+            st.write("#### Technology Information")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Tech Stack:** {row.get('tech_stack', 'Unknown')}")
+                st.write(f"**Tech Leadership:** {row.get('tech_leadership', 'Unknown')}")
+            with col2:
+                st.write(f"**Tech Job Listings:** {row.get('tech_job_listings', 'None')}")
+                st.write(f"**Social Media:** {row.get('social_media', 'None')}")
+            
+            # Description if available
+            if 'company_description' in row and row['company_description']:
+                st.write("#### Company Description")
+                st.write(row['company_description'])
 
 def display_full_data_table(df):
     """
@@ -199,12 +206,16 @@ def display_full_data_table(df):
     
     # Select columns to display
     display_columns = [
-        'Company', 'CompanyWebsite', 'Industry', 'CompanySize', 
-        'CompanyFunding', 'CompanyLocation', 'EnrichmentStatus', 'EnrichmentSource'
+        'company', 'website', 'industry', 'company_size', 
+        'funding_amount', 'location', 'enrichment_status', 'enrichment_source'
     ]
     
     # Filter columns that exist in the DataFrame
-    display_columns = [col for col in display_columns if col in df.columns]
+    existing_columns = [col for col in display_columns if col in df.columns]
     
-    # Display the table
-    st.dataframe(df[display_columns]) 
+    if not existing_columns:
+        st.info("No enrichment data columns available to display.")
+        return
+    
+    # Display the data
+    st.dataframe(df[existing_columns], use_container_width=True) 

@@ -3,36 +3,25 @@
 """
 Session State Management
 
-This module handles the initialization and management of Streamlit session state.
+This module handles the initialization and management of Streamlit session state
+for the simplified three-step workflow.
 """
 
 import streamlit as st
 import pandas as pd
-import logging
-
-logger = logging.getLogger('csv_processor')
 
 def initialize_session_state():
     """
     Initialize Streamlit session state variables.
     These variables persist across reruns of the Streamlit app.
     """
-    # Step management
+    # Step management - Simplified to three steps
     if 'current_step' not in st.session_state:
         st.session_state.current_step = "upload"
     
-    # Data storage
-    if 'raw_data' not in st.session_state:
-        st.session_state.raw_data = None
-    
-    if 'processed_data' not in st.session_state:
-        st.session_state.processed_data = None
-    
-    if 'enriched_data' not in st.session_state:
-        st.session_state.enriched_data = None
-    
-    if 'final_data' not in st.session_state:
-        st.session_state.final_data = None
+    # Data storage - Simplified
+    if 'data' not in st.session_state:
+        st.session_state.data = None
     
     # API keys and credentials
     if 'api_keys' not in st.session_state:
@@ -59,10 +48,6 @@ def initialize_session_state():
             'messages': []
         }
     
-    # Selected leads for export
-    if 'selected_leads' not in st.session_state:
-        st.session_state.selected_leads = []
-    
     # Salesforce export results
     if 'export_results' not in st.session_state:
         st.session_state.export_results = {
@@ -70,7 +55,7 @@ def initialize_session_state():
             'failures': []
         }
     
-    logger.debug("Session state initialized")
+    print("Session state initialized")
 
 def go_to_step(step):
     """
@@ -79,13 +64,13 @@ def go_to_step(step):
     Args:
         step (str): The step to navigate to
     """
-    valid_steps = ["upload", "preview", "enrich", "edit", "export"]
+    valid_steps = ["upload", "view", "enrich_export"]
     
     if step in valid_steps:
         st.session_state.current_step = step
-        logger.info(f"Navigated to step: {step}")
+        print(f"Navigated to step: {step}")
     else:
-        logger.error(f"Invalid step requested: {step}")
+        print(f"Invalid step requested: {step}")
         st.error(f"Invalid step: {step}")
 
 def reset_session_state():
@@ -104,4 +89,4 @@ def reset_session_state():
     if saved_api_keys:
         st.session_state.api_keys = saved_api_keys
     
-    logger.info("Session state reset") 
+    print("Session state reset") 

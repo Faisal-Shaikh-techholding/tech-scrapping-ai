@@ -4,7 +4,7 @@
 AI-Powered CSV Processor for Company Data
 
 This application allows users to upload CSV files with company information,
-enrich the data, and submit it to Salesforce CRM.
+view and verify the data, then enrich and send it to Salesforce CRM.
 
 Author: Your Name
 """
@@ -13,7 +13,6 @@ import streamlit as st
 import pandas as pd
 import os
 import sys
-import logging
 from datetime import datetime
 
 # Add the app directory to the path so we can import our modules
@@ -25,18 +24,14 @@ from app.utils.session_state import initialize_session_state, go_to_step
 # Import components
 from app.components.sidebar import render_sidebar
 from app.components.csv_upload import render_csv_upload
-from app.components.data_preview import render_data_preview
-from app.components.data_enrichment import render_data_enrichment
-from app.components.data_editor import render_data_editor
-from app.components.salesforce_export import render_salesforce_export
-
-
+from app.components.data_view import render_data_view
+from app.components.enrich_export import render_enrich_export
 
 # App title and description
 APP_TITLE = "AI-Powered CSV Processor for Company Data"
 APP_DESCRIPTION = """
-Upload CSV files with company information, enrich data using external APIs and web scraping, 
-and submit the enriched data to Salesforce CRM.
+Upload CSV files with company information, view and verify data, 
+then enrich and send it to Salesforce CRM with just a few clicks.
 """
 
 # Custom CSS
@@ -79,20 +74,17 @@ def main():
     
     # Main content area
     st.title(APP_TITLE)
+    st.markdown(APP_DESCRIPTION)
     
     # Render the appropriate component based on the current step
     current_step = st.session_state.current_step
     
     if current_step == "upload":
         render_csv_upload()
-    elif current_step == "preview":
-        render_data_preview()
-    elif current_step == "enrich":
-        render_data_enrichment()
-    elif current_step == "edit":
-        render_data_editor()
-    elif current_step == "export":
-        render_salesforce_export()
+    elif current_step == "view":
+        render_data_view()
+    elif current_step == "enrich_export":
+        render_enrich_export()
     else:
         st.error(f"Unknown step: {current_step}")
     

@@ -58,16 +58,16 @@ def render_data_editor():
         # Filter by enrichment status
         enrichment_status = st.multiselect(
             "Enrichment Status",
-            options=sorted(df['EnrichmentStatus'].unique()),
-            default=sorted(df['EnrichmentStatus'].unique())
+            options=sorted(df['enrichment_status'].unique()),
+            default=sorted(df['enrichment_status'].unique())
         )
     
     with col2:
         # Filter by industry if available
-        if 'Industry' in df.columns and df['Industry'].notna().any():
+        if 'industry' in df.columns and df['industry'].notna().any():
             industries = st.multiselect(
                 "Industry",
-                options=sorted(df['Industry'].dropna().unique()),
+                options=sorted(df['industry'].dropna().unique()),
                 default=[]
             )
     
@@ -78,12 +78,12 @@ def render_data_editor():
     logger.info(f"Before filtering: {len(filtered_df)} companies")
     
     if enrichment_status:
-        filtered_df = filtered_df[filtered_df['EnrichmentStatus'].isin(enrichment_status)]
+        filtered_df = filtered_df[filtered_df['enrichment_status'].isin(enrichment_status)]
         logger.info(f"After enrichment status filter: {len(filtered_df)} companies")
     
     if 'industries' in locals() and industries:
         # Handle potential NaN values in Industry column
-        industry_filter = filtered_df['Industry'].isin(industries)
+        industry_filter = filtered_df['industry'].isin(industries)
         filtered_df = filtered_df[industry_filter]
         logger.info(f"After industry filter: {len(filtered_df)} companies")
     
@@ -91,9 +91,9 @@ def render_data_editor():
     search_term = st.text_input("Search companies", "")
     if search_term:
         search_filter = (
-            filtered_df['Company'].str.contains(search_term, case=False, na=False) |
-            filtered_df.get('CompanyDescription', '').str.contains(search_term, case=False, na=False) |
-            filtered_df.get('Industry', '').str.contains(search_term, case=False, na=False)
+            filtered_df['company'].str.contains(search_term, case=False, na=False) |
+            filtered_df.get('company_description', '').str.contains(search_term, case=False, na=False) |
+            filtered_df.get('industry', '').str.contains(search_term, case=False, na=False)
         )
         filtered_df = filtered_df[search_filter]
         logger.info(f"After search filter: {len(filtered_df)} companies")
@@ -150,33 +150,33 @@ def render_data_editor():
                     help="Select companies to export",
                     default=True
                 ),
-                "Company": st.column_config.TextColumn(
+                "company": st.column_config.TextColumn(
                     "Company Name",
                     width="large"
                 ),
-                "CompanyWebsite": st.column_config.TextColumn(
+                "website": st.column_config.TextColumn(
                     "Website",
                     width="medium"
                 ),
-                "Industry": st.column_config.TextColumn(
+                "industry": st.column_config.TextColumn(
                     "Industry",
                     width="medium"
                 ),
-                "CompanyDescription": st.column_config.TextColumn(
+                "company_description": st.column_config.TextColumn(
                     "Description",
                     width="large"
                 ),
-                "CompanyLocation": st.column_config.TextColumn(
+                "location": st.column_config.TextColumn(
                     "Location",
                     width="medium"
                 ),
-                "EnrichmentStatus": st.column_config.SelectboxColumn(
+                "enrichment_status": st.column_config.SelectboxColumn(
                     "Status",
-                    options=["Success", "Pending", "Failed"],
+                    options=["Completed", "Pending", "Failed", "Cancelled"],
                     width="small"
                 )
             },
-            disabled=["EnrichmentStatus", "EnrichmentSource"],
+            disabled=["enrichment_status", "enrichment_source"],
             height=500,
         )
     
@@ -187,7 +187,7 @@ def render_data_editor():
         # Filter to only show companies with tech leadership data
         tech_leadership_companies = []
         for idx, row in filtered_df.iterrows():
-            if isinstance(row.get('TechLeadership'), list) and len(row.get('TechLeadership', [])) > 0:
+            if isinstance(row.get('tech_leadership'), list) and len(row.get('tech_leadership', [])) > 0:
                 tech_leadership_companies.append(idx)
         
         if tech_leadership_companies:
@@ -195,8 +195,8 @@ def render_data_editor():
             
             # Display companies with tech leadership
             for idx, row in tech_leaders_df.iterrows():
-                with st.expander(f"{row['Company']} - Tech Leadership"):
-                    tech_leaders = row.get('TechLeadership', [])
+                with st.expander(f"{row['company']} - Tech Leadership"):
+                    tech_leaders = row.get('tech_leadership', [])
                     
                     if not tech_leaders:
                         st.write("No technology leadership contacts found.")
@@ -241,10 +241,10 @@ def render_data_editor():
                                 })
                             
                             # Update the filtered dataframe
-                            filtered_df.at[idx, 'TechLeadership'] = updated_leaders
+                            filtered_df.at[idx, 'tech_leadership'] = updated_leaders
                             
                             # Update the main dataframe
-                            df.at[idx, 'TechLeadership'] = updated_leaders
+                            df.at[idx, 'tech_leadership'] = updated_leaders
         else:
             st.info("No companies with technology leadership data found in the current selection.")
     
@@ -254,18 +254,18 @@ def render_data_editor():
         
         # Filter to only show companies with tech stack data
         tech_stack_companies = filtered_df[
-            (filtered_df['CompanyTechnology'].notna() & (filtered_df['CompanyTechnology'] != '')) |
-            filtered_df.apply(lambda row: isinstance(row.get('TechJobListings'), list) and len(row.get('TechJobListings', [])) > 0, axis=1)
+            (filtered_df['tech_stack'].notna() & (filtered_df['tech_stack'] != '')) |
+            filtered_df.apply(lambda row: isinstance(row.get('tech_job_listings'), list) and len(row.get('tech_job_listings', [])) > 0, axis=1)
         ]
         
         if not tech_stack_companies.empty:
             for idx, row in tech_stack_companies.iterrows():
-                with st.expander(f"{row['Company']} - Tech Stack"):
+                with st.expander(f"{row['company']} - Tech Stack"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.write("**Current Technologies:**")
-                        tech_stack = row.get('CompanyTechnology', '')
+                        tech_stack = row.get('tech_stack', '')
                         edited_tech = st.text_area(
                             "Technologies", 
                             value=tech_stack,
@@ -275,15 +275,15 @@ def render_data_editor():
                         
                         # Update if changed
                         if edited_tech != tech_stack:
-                            filtered_df.at[idx, 'CompanyTechnology'] = edited_tech
-                            df.at[idx, 'CompanyTechnology'] = edited_tech
+                            filtered_df.at[idx, 'tech_stack'] = edited_tech
+                            df.at[idx, 'tech_stack'] = edited_tech
                     
                     with col2:
                         st.write("**Tech Department Sizes:**")
-                        eng_headcount = row.get('EngineeringHeadcount', 0)
-                        it_headcount = row.get('ITHeadcount', 0)
-                        product_headcount = row.get('ProductHeadcount', 0)
-                        data_science_headcount = row.get('DataScienceHeadcount', 0)
+                        eng_headcount = row.get('engineering_headcount', 0)
+                        it_headcount = row.get('it_headcount', 0)
+                        product_headcount = row.get('product_headcount', 0)
+                        data_science_headcount = row.get('data_science_headcount', 0)
                         
                         edited_eng = st.number_input(
                             "Engineering", 
@@ -308,20 +308,20 @@ def render_data_editor():
                         
                         # Update if changed
                         if edited_eng != eng_headcount:
-                            filtered_df.at[idx, 'EngineeringHeadcount'] = edited_eng
-                            df.at[idx, 'EngineeringHeadcount'] = edited_eng
+                            filtered_df.at[idx, 'engineering_headcount'] = edited_eng
+                            df.at[idx, 'engineering_headcount'] = edited_eng
                         if edited_it != it_headcount:
-                            filtered_df.at[idx, 'ITHeadcount'] = edited_it
-                            df.at[idx, 'ITHeadcount'] = edited_it
+                            filtered_df.at[idx, 'it_headcount'] = edited_it
+                            df.at[idx, 'it_headcount'] = edited_it
                         if edited_product != product_headcount:
-                            filtered_df.at[idx, 'ProductHeadcount'] = edited_product
-                            df.at[idx, 'ProductHeadcount'] = edited_product
+                            filtered_df.at[idx, 'product_headcount'] = edited_product
+                            df.at[idx, 'product_headcount'] = edited_product
                         if edited_data != data_science_headcount:
-                            filtered_df.at[idx, 'DataScienceHeadcount'] = edited_data
-                            df.at[idx, 'DataScienceHeadcount'] = edited_data
+                            filtered_df.at[idx, 'data_science_headcount'] = edited_data
+                            df.at[idx, 'data_science_headcount'] = edited_data
                     
                     # Display tech job listings if available
-                    tech_jobs = row.get('TechJobListings', [])
+                    tech_jobs = row.get('tech_job_listings', [])
                     if tech_jobs and len(tech_jobs) > 0:
                         st.write("**Technology Job Listings:**")
                         for i, job in enumerate(tech_jobs):
@@ -340,18 +340,17 @@ def render_data_editor():
         
         # Filter to only show companies with funding data
         funding_companies = filtered_df[
-            (filtered_df['CompanyFunding'].notna() & (filtered_df['CompanyFunding'] != ''))
+            (filtered_df['funding_amount'].notna() & (filtered_df['funding_amount'] != ''))
         ]
         
         if not funding_companies.empty:
             for idx, row in funding_companies.iterrows():
-                with st.expander(f"{row['Company']} - Funding"):
+                with st.expander(f"{row['company']} - Funding"):
                     col1, col2 = st.columns(2)
                     
                     with col1:
                         st.write("**Funding Information:**")
-                        funding = row.get('CompanyFunding', 'N/A')
-                        funding_amount = row.get('CompanyFundingAmount', '')
+                        funding = row.get('funding_amount', 'N/A')
                         
                         st.write(f"**Total Funding:** {funding}")
                         
@@ -363,13 +362,13 @@ def render_data_editor():
                         
                         # Update if changed
                         if edited_funding != funding:
-                            filtered_df.at[idx, 'CompanyFunding'] = edited_funding
-                            df.at[idx, 'CompanyFunding'] = edited_funding
+                            filtered_df.at[idx, 'funding_amount'] = edited_funding
+                            df.at[idx, 'funding_amount'] = edited_funding
                     
                     with col2:
                         st.write("**Latest Funding Round:**")
-                        funding_date = row.get('CompanyLatestFundingDate', 'N/A')
-                        funding_stage = row.get('CompanyLatestFundingStage', 'N/A')
+                        funding_date = row.get('latest_funding_date', 'N/A')
+                        funding_stage = row.get('latest_funding_stage', 'N/A')
                         
                         st.write(f"**Date:** {funding_date}")
                         st.write(f"**Stage:** {funding_stage}")
@@ -382,8 +381,8 @@ def render_data_editor():
                         
                         # Update if changed
                         if edited_stage != funding_stage:
-                            filtered_df.at[idx, 'CompanyLatestFundingStage'] = edited_stage
-                            df.at[idx, 'CompanyLatestFundingStage'] = edited_stage
+                            filtered_df.at[idx, 'latest_funding_stage'] = edited_stage
+                            df.at[idx, 'latest_funding_stage'] = edited_stage
         else:
             st.info("No companies with funding data found in the current selection.")
     
@@ -449,4 +448,4 @@ def render_data_editor():
             # Show sample of enriched data
             if st.session_state.enriched_data is not None and not st.session_state.enriched_data.empty:
                 st.write("Sample from enriched_data:")
-                st.write(st.session_state.enriched_data[['Company', 'Industry', 'EnrichmentStatus']].head()) 
+                st.write(st.session_state.enriched_data[['company', 'industry', 'enrichment_status']].head()) 
